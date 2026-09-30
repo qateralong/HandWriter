@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HandWriter — чертёж</title>
+<link rel="icon" type="image/png" href="/static/icon.png">
+<style>
+  :root {
+    --bg: #eceae5; --panel: #fbfaf8; --line: #d9d5cc; --text: #222; --muted: #6d675d;
+    --accent: #2f5fb3; --err: #b3261e; --warn: #8a5a00; --errbg: #fdecea; --warnbg: #fff4dc;
+    --field: #fff;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font: 14px/1.35 system-ui, "Segoe UI", sans-serif; color: var(--text); background: var(--bg);
+         display: grid; grid-template-columns: 380px 1fr; overflow: hidden; }
+  aside { background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  .scroll { overflow-y: auto; padding: 10px 12px 16px; flex: 1; }
+  h1 { font-size: 16px; margin: 4px 0 8px; }
+  nav.tabs { display: flex; gap: 4px; margin: 0 0 6px; }
+  nav.tabs a { flex: 1; text-align: center; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px;
+               text-decoration: none; color: var(--text); background: #fff; font-weight: 600; }
+  nav.tabs a.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  details { border: 1px solid var(--line); border-radius: 8px; margin: 8px 0; background: #fff; }
+  summary { cursor: pointer; padding: 8px 10px; font-weight: 600; user-select: none; }
+  details > .body { padding: 4px 10px 10px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+  label.f { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 2px; }
+  label.f.wide { grid-column: 1 / -1; }
+  label.c { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 4px 0; }
+  input[type=number], input[type=text], select {
+    font: inherit; color: var(--text); background: var(--field); border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 7px; width: 100%; }
+  input:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent); border-color: var(--accent); }
+  input:disabled, select:disabled { opacity: .5; }
+  button { font: inherit; border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+  button.primary:disabled { opacity: .45; cursor: not-allowed; }
+  button.reach { width: 100%; margin-top: 6px; border-color: #c0392b; color: #9b2c20; font-weight: 600; }
+  .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+  .row > select { flex: 1; min-width: 0; }
+  .hint { font-size: 12px; color: var(--muted); margin: 4px 0; }
+  .actions { border-top: 1px solid var(--line); padding: 10px 12px; display: grid; grid-template-columns: 1fr; gap: 8px; background: var(--panel); }
+  .actions .primary { padding: 9px; }
+  main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .toolbar { display: flex; gap: 14px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+  .toolbar label.c { margin: 0; }
+  #canvasWrap { flex: 1; position: relative; min-height: 0; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
+  canvas.drag { cursor: grabbing; }
+  .status { border-top: 1px solid var(--line); background: var(--panel); padding: 8px 12px; max-height: 34vh; overflow-y: auto; }
+  .stats { display: flex; gap: 18px; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+  .stats b { font-weight: 600; }
+  .msg { border-radius: 6px; padding: 5px 8px; margin: 5px 0; font-size: 13px; }
+  .msg.err { background: var(--errbg); color: var(--err); }
+  .msg.warn { background: var(--warnbg); color: var(--warn); }
+  .kv { font-size: 12px; color: var(--muted); }
+  .scaleinfo { font-size: 13px; margin: 6px 0 0; }
+  .scaleinfo b { font-size: 15px; }
+  table.layers { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.layers td { padding: 2px 4px; border-top: 1px solid var(--line); }
+  table.layers select { padding: 2px 4px; }
+  .pill { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 99px; background: #eee; color: var(--muted); }
+  .passinfo { font-size: 13px; margin: 4px 0; }
+  .passinfo .sw { display: inline-block; width: 11px; height: 11px; border-radius: 2px; vertical-align: -1px; margin-right: 3px; }
+  .passinfo .turn { background: #e7efff; color: #1d3f82; border-radius: 6px; padding: 4px 8px; margin: 4px 0; font-weight: 600; }
+  .card { border: 1px solid var(--line); border-left-width: 5px; border-radius: 8px; padding: 8px 10px; margin: 8px 0; background: #fff; }
+  .card .top { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+  .card .top b { font-size: 14px; }
+  .card .cbody { display: grid; grid-template-columns: 128px 1fr; gap: 8px; margin-top: 6px; font-size: 12.5px; }
+  .card svg { width: 128px; height: auto; background: #fafafa; border-radius: 4px; }
+  .card .row { margin: 4px 0 0; }
+  .card input[type=number] { width: 58px; padding: 3px 5px; }
+  .card .err { color: var(--err); font-size: 12px; }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 50; }
+  .modal[hidden] { display: none; }
+  .dialog { background: var(--panel); border-radius: 10px; width: min(1000px, 96vw); max-height: 94vh; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
+  .dhead { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .dbody { display: grid; grid-template-columns: 1fr 380px; gap: 14px; padding: 12px 14px; overflow-y: auto; }
+  .steps ol { margin: 0; padding-left: 20px; font-size: 13px; } .steps li { margin: 0 0 8px; }
+  #wzSvg { background: #fff; border: 1px solid var(--line); border-radius: 6px; }
+  @media (max-width: 800px) { .dbody { grid-template-columns: 1fr; } }
+  @media (max-width: 800px) { body { grid-template-columns: 1fr; overflow: auto; } main { height: 90vh; } }
+</style>
+</head>
+<body>
+<aside>
+  <div class="scroll">
+    <nav class="tabs"><a href="/" data-tab>Почерк</a><a href="/drawing" class="on">Чертёж</a></nav>
+    <h1>Чертёж <span class="pill">проходы</span></h1>
+
+    <details open>
+      <summary>Файл</summary>
+      <div class="body">
+        <div class="row"><select id="fileSelect"></select></div>
+        <div class="row">
+          <button id="btnUpload" title="SVG, DXF, PDF, PNG, JPG">Загрузить чертёж…</button>
+          <input type="file" id="fileInput" accept=".svg,.dxf,.pdf,.png,.jpg,.jpeg" hidden>
+        </div>
+        <div id="fileInfo" class="kv"></div>
+        <div class="grid2" id="unitsBox">
+          <label class="f wide">Единицы файла
+            <select data-path="drawing.imp.units">
+              <option value="auto">по файлу (INSUNITS, width/height)</option>
+              <option value="mm">мм</option><option value="cm">см</option><option value="m">м</option>
+              <option value="in">дюймы</option><option value="ft">футы</option>
+              <option value="pt">пункты (1/72″)</option><option value="px">пиксели (96 на дюйм)</option>
+            </select></label>
+        </div>
+        <div class="grid2" id="pdfBox">
+          <label class="f">Страница PDF<input type="number" min="1" step="1" data-path="drawing.imp.pdf_page"></label>
+          <div class="kv" id="pdfPages" style="align-self:end"></div>
+        </div>
+        <div id="rasterBox">
+          <label class="c"><input type="checkbox" data-path="drawing.imp.threshold_auto"> Порог автоматически (Оцу)</label>
+          <div class="grid2">
+            <label class="f">Порог (0–255, темнее = линия)<input type="number" min="1" max="254" step="1" data-path="drawing.imp.threshold"></label>
+            <label class="f">DPI (0 = из файла)<input type="number" min="0" step="1" data-path="drawing.imp.raster_dpi"></label>
+          </div>
+          <label class="c"><input type="checkbox" data-path="drawing.imp.invert"> Светлые линии на тёмном фоне</label>
+        </div>
+        <div id="fillBox">
+          <label class="c"><input type="checkbox" data-path="drawing.imp.fill_centerlines"> Мелкие закрашенные фигуры → центральные линии</label>
+          <label class="f">…если меньшая сторона не больше, мм<input type="number" min="0.1" step="0.5" data-path="drawing.imp.fill_centerline_max"></label>
+          <div class="hint">Заливки не рисуются: берутся контуры и линии. С галочкой мелкие закрашенные фигуры (стрелки, текст в кривых, обведённые линии) рисуются по скелету, как буквы в режиме «Контуры».</div>
+        </div>
+      </div>
+    </details>
+
+    <details open>
+      <summary>Лист и масштаб</summary>
+      <div class="body">
+        <div class="grid2">
+          <label class="f">Формат
+            <select data-path="drawing.sheet.format"><option value="A4">A4 (210×297)</option><option value="A3">A3 (297×420)</option><option value="custom">свой размер</option></select></label>
+          <label class="f">Ориентация
+            <select data-path="drawing.sheet.orientation"><option value="auto">авто (по чертежу)</option><option value="portrait">книжная</option><option value="landscape">альбомная</option></select></label>
+          <label class="f custom">Ширина, мм<input type="number" step="1" data-path="drawing.sheet.width"></label>
+          <label class="f custom">Высота, мм<input type="number" step="1" data-path="drawing.sheet.height"></label>
+        </div>
+        <div class="row" style="flex-direction:column;align-items:stretch;gap:0">
+          <label class="c"><input type="radio" name="scaleMode" value="fit"> Вписать в лист (по центру, пропорции сохраняются)</label>
+          <label class="c"><input type="radio" name="scaleMode" value="fit_reach"> Вписать в достижимую область (один проход)</label>
+          <label class="c"><input type="radio" name="scaleMode" value="fit_passes"> Подобрать масштаб под проходы</label>
+          <label class="c"><input type="radio" name="scaleMode" value="one_to_one"> 1:1 в единицах файла</label>
+          <label class="c"><input type="radio" name="scaleMode" value="percent"> Задать:
+            <input type="number" min="0.1" step="1" data-path="drawing.placement.percent" style="width:90px"> %</label>
+        </div>
+        <div class="grid2">
+          <label class="f">Поле для «вписать», мм<input type="number" min="0" step="1" data-path="drawing.placement.margin"></label>
+          <span></span>
+          <label class="f">Сдвиг dx, мм<input type="number" step="0.5" data-path="drawing.placement.dx"></label>
+          <label class="f">Сдвиг dy, мм<input type="number" step="0.5" data-path="drawing.placement.dy"></label>
+        </div>
+        <div class="scaleinfo" id="scaleInfo"></div>
+        <button class="reach" id="btnReach" title="Масштаб, при котором чертёж целиком лежит в окне достижимости одного прохода (лучший допустимый поворот листа)">Вписать в достижимую область</button>
+        <button class="reach" id="btnPasses" title="Крупнейший масштаб, при котором все линии чертежа достаются хотя бы в одном допустимом проходе">Подобрать масштаб под проходы</button>
+      </div>
+    </details>
+
+    <details>
+      <summary>Рамка по ГОСТ 2.104</summary>
+      <div class="body">
+        <label class="c"><input type="checkbox" data-path="drawing.frame.enabled"> Рамка</label>
+        <div class="grid2">
+          <label class="f">Слева, мм<input type="number" step="0.5" min="0" data-path="drawing.frame.left"></label>
+          <label class="f">Справа, мм<input type="number" step="0.5" min="0" data-path="drawing.frame.right"></label>
+          <label class="f">Сверху, мм<input type="number" step="0.5" min="0" data-path="drawing.frame.top"></label>
+          <label class="f">Снизу, мм<input type="number" step="0.5" min="0" data-path="drawing.frame.bottom"></label>
+        </div>
+        <label class="c"><input type="checkbox" data-path="drawing.frame.title_block"> Основная надпись, форма 1 (только линии)</label>
+        <div class="grid2">
+          <label class="f">Ширина надписи, мм<input type="number" step="1" min="10" data-path="drawing.frame.tb_width"></label>
+          <label class="f">Высота надписи, мм<input type="number" step="1" min="5" data-path="drawing.frame.tb_height"></label>
+        </div>
+        <div class="row"><button id="btnFrameDefaults">По ГОСТ: 20/5/5/5, 185×55</button></div>
+        <div class="hint">Чертёж ставится над основной надписью или слева от неё (где крупнее). При изменении размера надписи её внутренние линии растягиваются пропорционально.</div>
+      </div>
+    </details>
+
+    <details>
+      <summary>Толщина линий</summary>
+      <div class="body">
+        <label class="c"><input type="checkbox" data-path="drawing.weights.enabled"> Толстые линии несколькими проходами</label>
+        <div class="grid2">
+          <label class="f">Толстая, если толще, мм<input type="number" step="0.05" min="0" data-path="drawing.weights.threshold"></label>
+          <label class="f">Проходов<input type="number" step="1" min="1" max="9" data-path="drawing.weights.passes"></label>
+          <label class="f">Шаг между проходами, мм<input type="number" step="0.05" min="0.01" data-path="drawing.weights.step"></label>
+        </div>
+        <div class="hint" id="passHint"></div>
+        <div id="layersBox"></div>
+      </div>
+    </details>
+
+    <details>
+      <summary>Путь карандаша</summary>
+      <div class="body">
+        <div class="grid2">
+          <label class="f">Допуск кривых, мм<input type="number" step="0.01" min="0.005" data-path="drawing.paths.curve_tol"></label>
+          <label class="f">Склейка концов, мм<input type="number" step="0.01" min="0" data-path="drawing.paths.join_tol"></label>
+          <label class="f">Длинные пути от, мм<input type="number" step="5" min="0" data-path="drawing.paths.long_path"></label>
+          <label class="f">Упрощение RDP, мм<input type="number" step="0.01" min="0" data-path="printer.simplify_tol"></label>
+        </div>
+        <div class="hint">Порядок: сначала длинные непрерывные пути, потом остальные; внутри — ближайший следующий путь от места, где карандаш поднялся. Касающиеся концы склеиваются в один путь.</div>
+      </div>
+    </details>
+
+    <details open>
+      <summary>Стол и проходы</summary>
+      <div class="body">
+        <button id="btnWizard" style="width:100%">Мастер калибровки достижимости…</button>
+        <label class="c"><input type="checkbox" id="travelMeasured"> Окно достижимости измерено</label>
+        <div class="hint">x_min..y_max относительно нуля (угол листа в упорах, G92 X0 Y0 Z0), как показывает экран принтера. Не измерено — считается равным листу.</div>
+        <div class="grid2">
+          <label class="f">x_min<input type="number" step="1" data-travel="x_min"></label>
+          <label class="f">x_max<input type="number" step="1" data-travel="x_max"></label>
+          <label class="f">y_min<input type="number" step="1" data-travel="y_min"></label>
+          <label class="f">y_max<input type="number" step="1" data-travel="y_max"></label>
+          <label class="f">Запас до границ, мм<input type="number" step="0.5" min="0" data-path="printer.safety_margin"></label>
+          <span></span>
+        </div>
+        <label class="c"><input type="checkbox" data-path="printer.table.overhang_x"> Лист может выступать за стол в сторону +X</label>
+        <label class="c"><input type="checkbox" data-path="printer.table.overhang_y"> Лист может выступать за стол в сторону +Y</label>
+        <div class="grid2">
+          <label class="f">Стол от упора по +X, мм<input type="number" step="1" min="0" data-table="table_x" placeholder="= окно"></label>
+          <label class="f">Стол от упора по +Y, мм<input type="number" step="1" min="0" data-table="table_y" placeholder="= окно"></label>
+        </div>
+        <div class="hint">Стороны — в системе координат прохода: от угла листа в упорах вдоль его краёв. Размер стола не задан — край стола считается по краю окна. Лист поворачивают на 0/90/180/270° против часовой (сверху), в упор ставится другой угол (A–D на предпросмотре); зеркала не бывает.</div>
+      </div>
+    </details>
+
+    <details open>
+      <summary>Проходы и файлы</summary>
+      <div class="body">
+        <div id="partCards"></div>
+        <details style="margin:8px 0 0">
+          <summary style="font-weight:500">Швы и крестики</summary>
+          <div class="body">
+            <div class="grid2">
+              <label class="f">Нахлёст у шва, мм<input type="number" step="0.1" min="0" data-path="drawing.split.overlap"></label>
+              <label class="f">Запас под сдвиг нуля, мм<input type="number" step="0.5" min="0" data-path="drawing.split.slack"></label>
+            </div>
+            <label class="c"><input type="checkbox" data-path="drawing.split.marks"> Контрольные крестики вдоль швов</label>
+            <div class="grid2">
+              <label class="f">Размах крестика, мм<input type="number" step="0.5" min="1" data-path="drawing.split.mark_size"></label>
+              <label class="f">Крестиков на шов<input type="number" step="1" min="1" max="10" data-path="drawing.split.mark_count"></label>
+            </div>
+            <div class="hint">Линия, пересекающая шов, режется по шву; каждый кусок продлевается вдоль линии на нахлёст — при сдвиге нуля на доли мм линия не рвётся. Крестики рисуются тонко в одних и тех же точках листа в обоих соседних проходах: по их сдвигу подбери dx, dy следующего прохода (в карточке).</div>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details>
+      <summary>Принтер (общие настройки с «Почерком»)</summary>
+      <div class="body">
+        <div class="grid2">
+          <label class="f">pen_up_z<input type="number" step="0.1" data-path="printer.pen_up_z"></label>
+          <label class="f">pen_down_z<input type="number" step="0.1" data-path="printer.pen_down_z"></label>
+          <label class="f">feed_draw, мм/мин<input type="number" step="50" data-path="printer.feed_draw"></label>
+          <label class="f">feed_travel, мм/мин<input type="number" step="50" data-path="printer.feed_travel"></label>
+          <label class="f">feed_z, мм/мин<input type="number" step="50" data-path="printer.feed_z"></label>
+        </div>
+      </div>
+    </details>
+  </div>
+  <div class="actions">
+    <button class="primary" id="btnGcode">Скачать gcode</button>
+    <button id="btnTests" title="Тестовый файл на каждый проход: метка угла, номер прохода, рамка доступной части, ячейка прохода, крестики">Тестовые файлы проходов</button>
+  </div>
+</aside>
+
+<main>
+  <div class="toolbar">
+    <button id="btnFit">Весь лист</button>
+    <label class="c">Вид <select id="viewMode" style="width:auto"><option value="0">лист, все проходы</option></select></label>
+    <label class="c"><input type="checkbox" data-path="drawing.show_travel"> Холостые ходы</label>
+    <label class="c"><input type="checkbox" id="showReach" checked> Карта проходов</label>
+    <label class="c"><input type="checkbox" id="showPasses" checked> Толщина линий</label>
+    <span class="kv" id="cursorPos"></span>
+    <span class="kv" id="busy"></span>
+  </div>
+  <div id="canvasWrap"><canvas id="cv"></canvas></div>
+  <div class="status">
+    <div class="stats" id="stats"></div>
+    <div id="passInfo" class="passinfo"></div>
+    <div id="messages"></div>
+  </div>
+</main>
+
+<div id="wizard" class="modal" hidden>
+  <div class="dialog">
+    <div class="dhead"><b>Калибровка окна достижимости</b><button id="wzClose" title="Закрыть">✕</button></div>
+    <div class="dbody">
+      <div class="steps">
+        <ol>
+          <li>Карандаш закреплён, поднят над столом. Лист (лучше A4) поставь в упоры: угол листа — в угол упоров, края вдоль упоров.</li>
+          <li>Из меню «Перемещение» приведи карандаш в угол листа и опусти до касания бумаги (как перед печатью).</li>
+          <li><b>Ноль в углу:</b> запусти с SD <a href="#" id="wzZero">файл нуля</a> — он делает <code>G92 X0 Y0 Z0</code> и поднимает карандаш. На экране будет X0 Y0. Без файла — просто перепиши координаты угла с экрана в поля «угол».</li>
+          <li>Из меню «Перемещение» мелким шагом (1 мм, у края 0.1 мм) веди карандаш по <b>+X</b>, пока он не упрётся (в раму, упор, край хода) — запиши X. Верни в угол. Так же <b>+Y</b>, потом <b>−X</b> и <b>−Y</b> (за угол, над упорами).</li>
+          <li>Введи числа справа и нажми «Записать в настройки». Запас 2 мм программа добавит сама.</li>
+          <li>Скачай <b>проверочный файл</b>, поставь лист в упор, карандаш в угол до касания и запусти его. Карандаш по очереди придёт в четыре угла окна (отступ 2 мм), в каждом поставит точку (касание 1 с) и поднимется; между углами пауза. Следи, чтобы он нигде не упирался. Упёрся — уменьши окно с этой стороны.</li>
+          <li>Линейкой измерь стол от упоров по +X и +Y (необязательно) и отметь, куда лист может выступать за стол (корпус принтера не мешает).</li>
+        </ol>
+      </div>
+      <div class="side">
+        <svg id="wzSvg" viewBox="0 0 360 300" width="100%"></svg>
+        <div class="grid2">
+          <label class="f">Угол: X на экране<input type="number" step="0.1" data-reading="x0" placeholder="0"></label>
+          <label class="f">Угол: Y на экране<input type="number" step="0.1" data-reading="y0" placeholder="0"></label>
+          <label class="f">X у упора по +X<input type="number" step="0.1" data-reading="px"></label>
+          <label class="f">Y у упора по +Y<input type="number" step="0.1" data-reading="py"></label>
+          <label class="f">X у упора по −X<input type="number" step="0.1" data-reading="mx"></label>
+          <label class="f">Y у упора по −Y<input type="number" step="0.1" data-reading="my"></label>
+        </div>
+        <div id="wzResult" class="kv"></div>
+        <div class="row">
+          <button id="wzSave" class="primary">Записать в настройки</button>
+          <button id="wzCheck">Скачать проверочный файл</button>
+        </div>
+        <div id="wzMsg"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="/static/keepalive.js"></script>
+<script src="/static/drawing.js"></script>
+</body>
+</html>

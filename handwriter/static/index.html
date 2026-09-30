@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HandWriter — почерк</title>
+<link rel="icon" type="image/png" href="/static/icon.png">
+<style>
+  :root {
+    --bg: #eceae5; --panel: #fbfaf8; --line: #d9d5cc; --text: #222; --muted: #6d675d;
+    --accent: #2f5fb3; --err: #b3261e; --warn: #8a5a00; --errbg: #fdecea; --warnbg: #fff4dc;
+    --field: #fff;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font: 14px/1.35 system-ui, "Segoe UI", sans-serif; color: var(--text); background: var(--bg);
+         display: grid; grid-template-columns: 380px 1fr; overflow: hidden; }
+  aside { background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  .scroll { overflow-y: auto; padding: 10px 12px 16px; flex: 1; }
+  h1 { font-size: 16px; margin: 4px 0 8px; }
+  details { border: 1px solid var(--line); border-radius: 8px; margin: 8px 0; background: #fff; }
+  summary { cursor: pointer; padding: 8px 10px; font-weight: 600; user-select: none; }
+  details > .body { padding: 4px 10px 10px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+  label.f { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 2px; }
+  label.f.wide { grid-column: 1 / -1; }
+  label.c { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 4px 0; }
+  input[type=number], input[type=text], select, textarea {
+    font: inherit; color: var(--text); background: var(--field); border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 7px; width: 100%; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent); border-color: var(--accent); }
+  textarea { min-height: 150px; resize: vertical; font-family: inherit; tab-size: 4; }
+  button { font: inherit; border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+  button.primary:disabled { opacity: .45; cursor: not-allowed; }
+  .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+  .row > select { flex: 1; min-width: 0; }
+  .hint { font-size: 12px; color: var(--muted); margin: 4px 0; }
+  .actions { border-top: 1px solid var(--line); padding: 10px 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: var(--panel); }
+  .actions .primary { grid-column: 1 / -1; padding: 9px; }
+  main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .toolbar { display: flex; gap: 14px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+  .toolbar label.c { margin: 0; }
+  #canvasWrap { flex: 1; position: relative; min-height: 0; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
+  canvas.drag { cursor: grabbing; }
+  .status { border-top: 1px solid var(--line); background: var(--panel); padding: 8px 12px; max-height: 34vh; overflow-y: auto; }
+  .stats { display: flex; gap: 18px; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+  .stats b { font-weight: 600; }
+  .msg { border-radius: 6px; padding: 5px 8px; margin: 5px 0; font-size: 13px; }
+  .msg.err { background: var(--errbg); color: var(--err); }
+  .msg.warn { background: var(--warnbg); color: var(--warn); }
+  .missing { border: 1px solid var(--line); border-radius: 6px; padding: 6px; margin: 6px 0; }
+  .missing .ch { font-size: 18px; min-width: 1.6em; text-align: center; border: 1px solid var(--line); border-radius: 4px; background: #faf8f4; }
+  .missing .pos { font-size: 12px; color: var(--muted); }
+  .missing.ok { opacity: .7; }
+  .kv { font-size: 12px; color: var(--muted); }
+  .end { margin-top: 4px; }
+  .slider { display: grid; grid-template-columns: 1fr 70px; gap: 2px 8px; align-items: center; margin: 6px 0; }
+  .slider label { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+  .slider input[type=range] { width: 100%; }
+  .tags span { display: inline-block; font-size: 11px; background: #f0ede6; border-radius: 4px; padding: 0 4px; margin: 1px; }
+  .pill { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 99px; background: #eee; color: var(--muted); }
+  nav.tabs { display: flex; gap: 4px; margin: 0 0 6px; }
+  nav.tabs a { flex: 1; text-align: center; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px;
+               text-decoration: none; color: var(--text); background: #fff; font-weight: 600; }
+  nav.tabs a.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  @media (max-width: 800px) { body { grid-template-columns: 1fr; overflow: auto; } aside { max-height: none; } main { height: 90vh; } }
+</style>
+</head>
+<body>
+<aside>
+  <div class="scroll">
+    <nav class="tabs"><a href="/" class="on">Почерк</a><a href="/drawing" data-tab>Чертёж</a></nav>
+    <h1>HandWriter <span class="pill">почерк</span></h1>
+
+    <details open>
+      <summary>Шрифт</summary>
+      <div class="body">
+        <div class="row">
+          <select id="fontSelect"></select>
+        </div>
+        <div class="row">
+          <label class="c" title="SVG-шрифт или папка SVG: линии уже центральные"><input type="radio" name="mode" value="strokes" checked> Штрихи</label>
+          <label class="c" title="TTF/OTF: закрашенные буквы превращаются в линии по скелету"><input type="radio" name="mode" value="outlines"> Контуры</label>
+          <a href="/debug" target="_blank" class="kv" style="margin-left:auto">Отладка глифов ↗</a>
+        </div>
+        <div class="row">
+          <button id="btnUploadFont" title="TTF, OTF или SVG-шрифт с элементами &lt;glyph&gt;">Загрузить шрифт…</button>
+          <button id="btnUploadFolder" title="Папка с а.svg, а.2.svg, uni0410.svg…">Папка SVG…</button>
+          <input type="file" id="fileFont" accept=".ttf,.otf,.svg" hidden>
+          <input type="file" id="fileFolder" webkitdirectory multiple hidden>
+        </div>
+        <div id="fontInfo" class="kv"></div>
+      </div>
+    </details>
+
+    <details id="outlineBox">
+      <summary>Контуры → линии</summary>
+      <div class="body">
+        <div class="hint">Как из закрашенной буквы получаются линии. Доли от высоты строчной буквы. Подбирать удобнее на странице «Отладка глифов».</div>
+        <div id="outlineSliders"></div>
+      </div>
+    </details>
+
+    <details open>
+      <summary>Текст</summary>
+      <div class="body">
+        <textarea id="text" data-path="text" spellcheck="false"></textarea>
+        <div class="row">
+          <button id="btnLoadTxt">Загрузить .txt…</button>
+          <input type="file" id="fileTxt" accept=".txt,text/plain" hidden>
+          <label class="c"><input type="checkbox" data-path="typography.hyphenate"> Автоперенос</label>
+        </div>
+        <div class="hint">Tab в начале строки: красная строка (в поле ввода Tab вставляется, а не переключает фокус). Пустая строка: пропуск строки листа. Мягкий перенос U+00AD учитывается всегда.</div>
+        <div id="missingBox"></div>
+      </div>
+    </details>
+
+    <details open>
+      <summary>Начало листа и продолжение</summary>
+      <div class="body">
+        <div class="grid2">
+          <label class="f">Начало листа: слово<input type="number" min="1" step="1" data-path="text_options.start_word"></label>
+          <div class="kv" id="wordCount" style="align-self:end"></div>
+        </div>
+        <div class="hint">Продолжить с буквы (если карандаш сломался или лист сдвинулся): лист считается целиком с теми же seed и полями, в gcode идёт только хвост от этой буквы. Проще всего кликнуть по букве в предпросмотре.</div>
+        <div class="grid2">
+          <label class="f">Продолжить с: слово (0 = весь лист)<input type="number" min="0" step="1" data-path="text_options.resume_word"></label>
+          <label class="f">буква<input type="number" min="1" step="1" data-path="text_options.resume_letter"></label>
+        </div>
+        <div class="row">
+          <button id="btnResumeOff">Писать весь лист</button>
+          <span class="kv" id="resumeInfo"></span>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>Случайность</summary>
+      <div class="body">
+        <div class="row">
+          <label class="c"><input type="checkbox" data-path="randomness.enabled"> Включена</label>
+          <label class="c">seed <input type="number" step="1" data-path="randomness.seed" style="width:110px"></label>
+          <button id="btnSeed" title="Новый случайный seed">🎲</button>
+        </div>
+        <label class="c"><input type="checkbox" data-path="randomness.variants"> Случайные варианты букв (без повторов подряд)</label>
+        <div id="randomSliders"></div>
+        <div class="row"><button id="btnRandomDefaults">Значения по умолчанию</button></div>
+        <div class="hint">Тот же seed и те же настройки дают побайтно тот же gcode.</div>
+      </div>
+    </details>
+
+    <details>
+      <summary>Слитное письмо</summary>
+      <div class="body">
+        <label class="c"><input type="checkbox" data-path="connections.enabled"> Соединять буквы (связки)</label>
+        <div id="connectionSliders"></div>
+        <div class="hint">Порядок: слева направо, основная линия слова, потом детали (точки, короткие перекладины, диакритика). Касающиеся концами пути одной буквы склеиваются.</div>
+      </div>
+    </details>
+
+    <details open>
+      <summary>Лист</summary>
+      <div class="body">
+        <div class="row">
+          <select id="profileSelect"></select>
+        </div>
+        <div class="row">
+          <button id="btnProfileSave" title="Записать текущие параметры листа в выбранный профиль">Сохранить в профиль</button>
+          <button id="btnProfileNew">Новый…</button>
+          <button id="btnProfileDel">Удалить</button>
+          <button id="btnProfileReset" title="Вернуть три стандартных профиля">Стандартные</button>
+        </div>
+        <div class="grid2">
+          <label class="f">Ширина, мм<input type="number" step="0.5" data-path="sheet.width"></label>
+          <label class="f">Высота, мм<input type="number" step="0.5" data-path="sheet.height"></label>
+          <label class="f">Левое поле<input type="number" step="0.5" data-path="sheet.margin_left"></label>
+          <label class="f">Правое поле<input type="number" step="0.5" data-path="sheet.margin_right"></label>
+          <label class="f">От верха до 1-й базы<input type="number" step="0.5" data-path="sheet.first_line_top"></label>
+          <label class="f">Нижний предел (от низа)<input type="number" step="0.5" data-path="sheet.bottom_limit"></label>
+          <label class="f">Шаг строк<input type="number" step="0.5" data-path="sheet.line_pitch"></label>
+          <label class="f">Красная строка<input type="number" step="0.5" data-path="sheet.indent"></label>
+          <label class="f">Разлиновка
+            <select data-path="sheet.ruling"><option value="grid">клетка</option><option value="lines">линейка</option><option value="none">нет</option></select></label>
+          <label class="f">Шаг клетки<input type="number" step="0.5" data-path="sheet.grid_step"></label>
+        </div>
+      </div>
+    </details>
+
+    <details open>
+      <summary>Размер и подгонка</summary>
+      <div class="body">
+        <div class="grid2">
+          <label class="f">Высота строчной, мм<input type="number" step="0.1" min="0.5" data-path="typography.size_mm"></label>
+          <label class="f">Сдвиг базы, мм<input type="number" step="0.1" data-path="typography.baseline_shift"></label>
+          <label class="f">Поправка dx, мм<input type="number" step="0.1" data-path="typography.dx"></label>
+          <label class="f">Поправка dy, мм<input type="number" step="0.1" data-path="typography.dy"></label>
+          <label class="f wide">Поворот текста, ° (против часовой +, вокруг угла листа)<input type="number" step="0.1" data-path="typography.rotation_deg"></label>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>Принтер</summary>
+      <div class="body">
+        <div class="grid2">
+          <label class="f">pen_up_z<input type="number" step="0.1" data-path="printer.pen_up_z"></label>
+          <label class="f">pen_down_z<input type="number" step="0.1" data-path="printer.pen_down_z"></label>
+          <label class="f">feed_draw, мм/мин<input type="number" step="50" data-path="printer.feed_draw"></label>
+          <label class="f">feed_travel, мм/мин<input type="number" step="50" data-path="printer.feed_travel"></label>
+          <label class="f">feed_z, мм/мин<input type="number" step="50" data-path="printer.feed_z"></label>
+          <label class="f">Допуск упрощения, мм<input type="number" step="0.01" min="0" data-path="printer.simplify_tol"></label>
+          <label class="f">Запас до границ хода<input type="number" step="0.5" min="0" data-path="printer.safety_margin"></label>
+          <label class="f">Стрелки теста от нуля<input type="number" step="0.5" min="0" data-path="printer.test_mark_offset"></label>
+        </div>
+        <label class="c"><input type="checkbox" data-path="printer.flip_x"> flip_x (ось X принтера смотрит влево по листу)</label>
+        <label class="c"><input type="checkbox" data-path="printer.flip_y"> flip_y (ось Y принтера смотрит вниз по листу)</label>
+        <label class="c"><input type="checkbox" id="travelMeasured"> Ход карандаша измерен</label>
+        <div class="hint">Координаты принтера после G92 в углу листа (как на экране принтера). При flip значения на этой оси отрицательные.</div>
+        <div class="grid2" id="travelFields">
+          <label class="f">x_min<input type="number" step="1" data-travel="x_min"></label>
+          <label class="f">x_max<input type="number" step="1" data-travel="x_max"></label>
+          <label class="f">y_min<input type="number" step="1" data-travel="y_min"></label>
+          <label class="f">y_max<input type="number" step="1" data-travel="y_max"></label>
+        </div>
+      </div>
+    </details>
+  </div>
+  <div class="actions">
+    <button class="primary" id="btnGcode">Скачать gcode</button>
+    <button id="btnTest">Скачать тестовый файл</button>
+    <label class="c"><input type="checkbox" id="showTest"> Показать тест</label>
+  </div>
+</aside>
+
+<main>
+  <div class="toolbar">
+    <button id="btnFit">Вписать</button>
+    <label class="c"><input type="checkbox" data-path="preview.show_travel"> Холостые ходы</label>
+    <label class="c"><input type="checkbox" data-path="preview.show_ruling"> Разлиновка</label>
+    <label class="c"><input type="checkbox" id="showTravelBox" checked> Ход карандаша</label>
+    <span class="kv" id="cursorPos"></span>
+    <span id="picked" style="font-size:13px"></span>
+    <span class="kv" id="busy"></span>
+  </div>
+  <div id="canvasWrap"><canvas id="cv"></canvas></div>
+  <div class="status">
+    <div class="stats" id="stats"></div>
+    <div class="end kv" id="endInfo"></div>
+    <div id="messages"></div>
+  </div>
+</main>
+<script src="/static/keepalive.js"></script>
+<script src="/static/outline_params.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

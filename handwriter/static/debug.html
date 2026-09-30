@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HandWriter — отладка глифов</title>
+<link rel="icon" type="image/png" href="/static/icon.png">
+<style>
+  :root { --bg: #eceae5; --panel: #fbfaf8; --line: #d9d5cc; --text: #222; --muted: #6d675d; --accent: #2f5fb3; --err: #b3261e; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font: 14px/1.35 system-ui, "Segoe UI", sans-serif; color: var(--text); background: var(--bg);
+         display: grid; grid-template-columns: 340px 1fr; overflow: hidden; }
+  aside { background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding: 10px 12px; }
+  h1 { font-size: 16px; margin: 4px 0 10px; }
+  label.f { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 2px; margin: 6px 0; }
+  label.c { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 3px 0; }
+  input[type=text], input[type=number], select { font: inherit; border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; width: 100%; background: #fff; color: var(--text); }
+  .slider { display: grid; grid-template-columns: 1fr 70px; gap: 2px 8px; align-items: center; margin: 8px 0; }
+  .slider label { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+  .slider input[type=range] { width: 100%; }
+  fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 10px 0; padding: 6px 10px; background: #fff; }
+  legend { font-weight: 600; padding: 0 4px; }
+  main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  #wrap { flex: 1; position: relative; min-height: 0; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; background: #fff; }
+  .status { border-top: 1px solid var(--line); background: var(--panel); padding: 8px 12px; max-height: 30vh; overflow: auto; font-size: 13px; }
+  table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  td, th { padding: 2px 10px 2px 0; text-align: left; }
+  th { color: var(--muted); font-weight: 500; }
+  .err { color: var(--err); }
+  .legend span { display: inline-flex; align-items: center; gap: 4px; margin-right: 12px; font-size: 12px; color: var(--muted); }
+  .sw { width: 14px; height: 10px; display: inline-block; border-radius: 2px; }
+  .hint { font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<aside>
+  <h1>Отладка глифов</h1>
+  <label class="f">Шрифт<select id="font"></select></label>
+  <label class="f">Слово (шейпинг как в вёрстке)<input type="text" id="text" value="Привет"></label>
+  <label class="f">или один глиф по имени / #ID (альтернативы, лигатуры)
+    <input type="text" id="glyph" list="names" placeholder="например uni0432.ss01"><datalist id="names"></datalist></label>
+  <fieldset>
+    <legend>Показать</legend>
+    <label class="c"><input type="checkbox" id="showOutline" checked> Контур шрифта</label>
+    <label class="c"><input type="checkbox" id="showRaw"> Сырой скелет (до обрезки)</label>
+    <label class="c"><input type="checkbox" id="showArrows" checked> Стрелки направления</label>
+    <label class="c"><input type="checkbox" id="showEnds" checked> Начала и концы</label>
+    <label class="c"><input type="checkbox" id="showNums" checked> Номера штрихов</label>
+    <label class="c"><input type="checkbox" id="showPoints"> Точки после упрощения</label>
+  </fieldset>
+  <fieldset id="params">
+    <legend>Контуры → линии</legend>
+    <div id="sliders"></div>
+    <div class="hint">Сохраняются в settings.json сразу, главная страница подхватит их при переключении на неё.</div>
+  </fieldset>
+</aside>
+<main>
+  <div id="wrap"><canvas id="cv"></canvas></div>
+  <div class="status">
+    <div class="legend">
+      <span><i class="sw" style="background:#ece6da;border:1px solid #bbb"></i>контур</span>
+      <span><i class="sw" style="background:#f1d56b"></i>сырой скелет</span>
+      <span><i class="sw" style="background:#1e9e4a;border-radius:50%"></i>начало</span>
+      <span><i class="sw" style="background:#c0392b"></i>конец</span>
+      <span>колесо: масштаб, мышь: сдвиг, двойной клик: вписать</span>
+    </div>
+    <div id="info"></div>
+  </div>
+</main>
+<script src="/static/keepalive.js"></script>
+<script src="/static/outline_params.js"></script>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let S = null, D = null, FONTS = [];
+const COLORS = ["#d62728", "#1f77b4", "#2ca02c", "#ff7f0e", "#9467bd", "#17becf", "#8c564b", "#e377c2"];
+
+async function api(method, url, body) {
+  const r = await fetch(url, { method, headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(typeof data.detail === "string" ? data.detail : r.statusText);
+  return data;
+}
+
+let timer = null, saveTimer = null, seq = 0;
+function changed(save) {
+  clearTimeout(timer); timer = setTimeout(load, 200);
+  if (save) { clearTimeout(saveTimer); saveTimer = setTimeout(saveOutline, 600); }
+}
+
+async function saveOutline() {
+  const fresh = await api("GET", "/api/settings");
+  fresh.outline = S.outline; fresh.font = S.font; fresh.mode = S.mode;
+  await api("PUT", "/api/settings", fresh);
+}
+
+async function load() {
+  const my = ++seq;
+  $("info").textContent = "считаю…";
+  try {
+    const d = await api("POST", "/api/debug/glyphs", { settings: S, text: $("text").value, glyph: $("glyph").value.trim() });
+    if (my !== seq) return;
+    D = d; view.auto && fit(); draw(); info();
+  } catch (e) { if (my === seq) $("info").innerHTML = `<span class="err">${e.message}</span>`; }
+}
+
+function info() {
+  const rows = D.glyphs.map((g) => {
+    const closed = g.closed.filter(Boolean).length;
+    return `<tr><td>${g.char ? escapeHtml(g.char) : ""}</td><td>${escapeHtml(g.name)}</td><td>${g.strokes.length}</td><td>${closed}</td><td>${g.ms} мс</td></tr>`;
+  }).join("");
+  const total = D.glyphs.reduce((a, g) => a + g.strokes.length, 0);
+  $("info").innerHTML = `<b>${escapeHtml(D.font)}</b> · штрихов всего: ${total} · высота строчной ${D.metrics.x_height.toFixed(3)} em
+    <table><tr><th>символ</th><th>глиф</th><th>штрихов</th><th>замкнутых</th><th>время</th></tr>${rows}</table>`;
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+const cv = $("cv"), ctx = cv.getContext("2d");
+const view = { k: 300, ox: 40, oy: 300, auto: true };
+function resize() {
+  const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+  if (view.auto && D) fit();
+  draw();
+}
+function bounds() {
+  let x0 = 0, x1 = 0.5, y0 = D.metrics.descent, y1 = D.metrics.ascent;
+  for (const g of D.glyphs) {
+    x1 = Math.max(x1, g.x + g.advance);
+    for (const c of g.outline.concat(g.strokes)) for (const [x, y] of c) {
+      x0 = Math.min(x0, g.x + x); x1 = Math.max(x1, g.x + x); y0 = Math.min(y0, g.y + y); y1 = Math.max(y1, g.y + y);
+    }
+  }
+  return [x0, y0, x1, y1];
+}
+function fit() {
+  const r = cv.getBoundingClientRect(), [x0, y0, x1, y1] = bounds(), pad = 30;
+  view.k = Math.min((r.width - 2 * pad) / (x1 - x0), (r.height - 2 * pad) / (y1 - y0));
+  view.ox = (r.width - (x1 - x0) * view.k) / 2 - x0 * view.k;
+  view.oy = (r.height + (y1 - y0) * view.k) / 2 + y0 * view.k;
+}
+const sx = (x) => view.ox + x * view.k, sy = (y) => view.oy - y * view.k;
+
+function draw() {
+  const dpr = window.devicePixelRatio || 1, r = cv.getBoundingClientRect();
+
+  if (cv.width !== Math.round(r.width * dpr) || cv.height !== Math.round(r.height * dpr)) {
+    cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+    if (view.auto && D) fit();
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (!D) return;
+
+  ctx.save(); ctx.strokeStyle = "#b9cdf0"; ctx.lineWidth = 1;
+  for (const y of [0, D.metrics.x_height]) { ctx.beginPath(); ctx.moveTo(0, sy(y)); ctx.lineTo(r.width, sy(y)); ctx.stroke(); }
+  ctx.restore();
+  for (const g of D.glyphs) {
+    const X = (x) => sx(g.x + x), Y = (y) => sy(g.y + y);
+    if ($("showOutline").checked && g.outline.length) {
+      ctx.save(); ctx.beginPath();
+      for (const c of g.outline) c.forEach(([x, y], i) => (i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y))));
+      ctx.fillStyle = "#ece6da"; ctx.fill("nonzero"); ctx.strokeStyle = "#bbb"; ctx.lineWidth = 1; ctx.stroke();
+      ctx.restore();
+    }
+    if ($("showRaw").checked) {
+      ctx.save(); ctx.strokeStyle = "#f1d56b"; ctx.lineWidth = 5; ctx.lineJoin = ctx.lineCap = "round";
+      for (const c of g.raw) { ctx.beginPath(); c.forEach(([x, y], i) => (i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y)))); ctx.stroke(); }
+      ctx.restore();
+    }
+    g.strokes.forEach((st, k) => {
+      const col = COLORS[k % COLORS.length];
+      const pts = st.map(([x, y]) => [X(x), Y(y)]);
+      ctx.save(); ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 2.2; ctx.lineJoin = ctx.lineCap = "round";
+      ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      if (pts.length === 1) { ctx.arc(pts[0][0], pts[0][1], 3, 0, Math.PI * 2); ctx.fill(); }
+      ctx.stroke();
+      if ($("showPoints").checked) for (const [x, y] of pts) ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
+      if ($("showArrows").checked) arrows(pts, col);
+      if ($("showEnds").checked && pts.length) {
+        const [a, b] = [pts[0], pts[pts.length - 1]];
+        ctx.fillStyle = "#1e9e4a"; ctx.beginPath(); ctx.arc(a[0], a[1], 5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#c0392b"; ctx.fillRect(b[0] - 4, b[1] - 4, 8, 8);
+      }
+      if ($("showNums").checked && pts.length) {
+        ctx.fillStyle = col; ctx.font = "bold 13px system-ui"; ctx.fillText(String(k + 1), pts[0][0] + 7, pts[0][1] - 7);
+      }
+      ctx.restore();
+    });
+  }
+}
+function arrows(pts, col) {
+  const every = 60; let acc = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const [x0, y0] = pts[i - 1], [x1, y1] = pts[i], L = Math.hypot(x1 - x0, y1 - y0);
+    acc += L;
+    if (acc < every || L === 0) continue;
+    acc = 0;
+    const a = Math.atan2(y1 - y0, x1 - x0), s = 9;
+    ctx.beginPath(); ctx.moveTo(x1, y1);
+    ctx.lineTo(x1 - s * Math.cos(a - 0.45), y1 - s * Math.sin(a - 0.45));
+    ctx.lineTo(x1 - s * Math.cos(a + 0.45), y1 - s * Math.sin(a + 0.45));
+    ctx.closePath(); ctx.fillStyle = col; ctx.fill();
+  }
+}
+
+cv.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+  const k = Math.min(20000, Math.max(20, view.k * Math.exp(-e.deltaY * 0.0015)));
+  const wx = (mx - view.ox) / view.k, wy = (view.oy - my) / view.k;
+  view.k = k; view.ox = mx - wx * k; view.oy = my + wy * k; view.auto = false; draw();
+}, { passive: false });
+let drag = null;
+cv.addEventListener("mousedown", (e) => (drag = { x: e.clientX, y: e.clientY, ox: view.ox, oy: view.oy }));
+window.addEventListener("mouseup", () => (drag = null));
+window.addEventListener("mousemove", (e) => {
+  if (!drag) return;
+  view.ox = drag.ox + e.clientX - drag.x; view.oy = drag.oy + e.clientY - drag.y; view.auto = false; draw();
+});
+cv.addEventListener("dblclick", () => { view.auto = true; fit(); draw(); });
+new ResizeObserver(resize).observe($("wrap"));
+document.querySelectorAll("fieldset input[type=checkbox]").forEach((c) => c.addEventListener("change", draw));
+$("text").addEventListener("input", () => { $("glyph").value = ""; view.auto = true; changed(false); });
+$("glyph").addEventListener("change", () => { view.auto = true; changed(false); });
+
+async function loadNames() {
+  try {
+    const r = await api("POST", "/api/debug/names", S);
+    $("names").innerHTML = r.names.map((n) => `<option value="${escapeHtml(n)}">`).join("");
+  } catch { $("names").innerHTML = ""; }
+}
+
+(async function init() {
+  S = await api("GET", "/api/settings");
+  FONTS = await api("GET", "/api/fonts");
+  const sel = $("font");
+  sel.innerHTML = FONTS.map((f) => `<option value="${escapeHtml(f.spec)}">${escapeHtml(f.label)} [${f.mode === "outlines" ? "контуры" : "штрихи"}]</option>`).join("");
+  sel.value = S.font;
+  sel.addEventListener("change", () => {
+    const f = FONTS.find((f) => f.spec === sel.value);
+    S.font = f.spec; S.mode = f.mode; $("glyph").value = ""; view.auto = true;
+    $("params").style.display = S.mode === "outlines" ? "" : "none";
+    loadNames(); changed(true);
+  });
+  $("params").style.display = S.mode === "outlines" ? "" : "none";
+  buildOutlineSliders($("sliders"), () => S.outline, () => changed(true));
+  await loadNames();
+  resize();
+  await load();
+})();
+</script>
+</body>
+</html>

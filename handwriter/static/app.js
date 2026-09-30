@@ -2,6 +2,7 @@
 
 let S = null;
 let P = null;
+const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 let TEST = null;
 let lastTravel = { x_min: -5, x_max: 200, y_min: -5, y_max: 200 };
 const $ = (id) => document.getElementById(id);
@@ -457,7 +458,7 @@ function draw() {
 
   ctx.save();
   ctx.shadowColor = "rgba(0,0,0,.18)"; ctx.shadowBlur = 12; ctx.shadowOffsetY = 2;
-  ctx.fillStyle = "#fff"; ctx.fillRect(sx(0), sy(H), W * view.k, H * view.k);
+  ctx.fillStyle = cssVar("--paper"); ctx.fillRect(sx(0), sy(H), W * view.k, H * view.k);
   ctx.restore();
 
   const bases = P?.baselines?.map((b) => b - S.typography.baseline_shift) || [];
@@ -520,7 +521,7 @@ function draw() {
 
   for (const done of [true, false]) {
     ctx.save(); ctx.lineWidth = lw; ctx.lineCap = "round"; ctx.lineJoin = "round";
-    ctx.strokeStyle = done ? "#b9b6b0" : "#1d1d1f";
+    ctx.strokeStyle = cssVar(done ? "--ink-done" : "--ink");
     ctx.beginPath();
     for (const st of P.strokes) {
       if (!!st.d !== done) continue;
@@ -666,3 +667,4 @@ window.addEventListener("focus", async () => {
   resize();
   await refreshPreview();
 })();
+addEventListener("themechange", () => { if (typeof P !== "undefined" && P) draw(); });

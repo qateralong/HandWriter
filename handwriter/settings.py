@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from .i18n import tr
 from .paths import DEFAULT_FONT, settings_path
@@ -100,6 +100,9 @@ class Printer(_M):
     feed_z: float = 600.0
     simplify_tol: float = 0.05
     travel: Travel | None = None
+    work_w: float = Field(220.0, gt=0, le=2000)
+    work_h: float = Field(220.0, gt=0, le=2000)
+    _use_work_area: bool = PrivateAttr(False)
     safety_margin: float = 2.0
     flip_x: bool = False
     flip_y: bool = False
@@ -130,6 +133,9 @@ class DrawingImport(_M):
     raster_dpi: float = Field(0.0, ge=0, le=4800)
     fill_centerlines: bool = False
     fill_centerline_max: float = Field(5.0, gt=0, le=100)
+    raster_mode: Literal["centerlines", "fill"] = "centerlines"
+    fill_step: float = Field(0.4, ge=0.05, le=5)
+    fill_dir: Literal["auto", "horizontal", "vertical"] = "auto"
 
 
 class DrawingSheet(_M):
@@ -145,6 +151,7 @@ class DrawingPlacement(_M):
     margin: float = Field(10.0, ge=0, le=200)
     dx: float = 0.0
     dy: float = 0.0
+    anchor: Literal["center", "zero"] = "center"
 
 
 class GostFrame(_M):
@@ -179,6 +186,7 @@ class DrawingSplit(_M):
     mark_size: float = Field(3.0, gt=0.5, le=20)
     mark_count: int = Field(3, ge=1, le=10)
     offsets: dict[str, tuple[float, float]] = Field(default_factory=dict)
+    areas: int = Field(0, ge=0, le=4)
 
 
 class DrawingSettings(_M):

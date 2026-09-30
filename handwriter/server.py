@@ -6,6 +6,7 @@ import re
 import secrets
 import time
 from functools import lru_cache
+from urllib.parse import quote
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -127,7 +128,7 @@ def static_file(name: str):
         raise HTTPException(404)
     if path.suffix in _TYPES and lang() != "ru":
         return Response(_text(path), media_type=_TYPES[path.suffix], headers=_NO_STORE)
-    return FileResponse(path)
+    return FileResponse(path, headers=_NO_STORE if path.suffix in _TYPES else None)
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -315,6 +316,36 @@ def drawing_gcode(s: Settings, part: int = 0, test: bool = False, all_tests: boo
     except GenerationRefused as e:
         return TrJSONResponse(status_code=422, content={"errors": e.errors})
     return {"files": files, "gcode": files[0]["gcode"], "filename": files[0]["filename"], "warnings": c.warnings}
+
+
+@app.post("/api/drawing/zip")
+def drawing_zip(s: Settings, tests: bool = True):
+    import io
+    import zipfile
+    from .drawing.passes import CORNER_NAME
+    from .drawing.pipeline import compose_drawing, file_stem, make_all_files, part_filename
+    from .i18n import tr
+    c = compose_drawing(s)
+    try:
+        files = make_all_files(c, tests)
+    except GenerationRefused as e:
+        return TrJSONResponse(status_code=422, content={"errors": e.errors})
+    n = len(c.parts)
+    lines = [f"Рабочих областей: {n}", ""]
+    for p in c.parts:
+        lines.append(f"{p.index}. {part_filename(c, p)}")
+        lines.append(f"   Поворот листа {p.rotation}°, в упоры угол {p.corner} ({CORNER_NAME[p.corner]}), карандаш в этот угол до касания — ноль.")
+    lines += ["", "Запускай файлы по порядку номеров. Файлы *_test.gcode — тестовые проходы без линий чертежа."]
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in files:
+            z.writestr(f["filename"], f["gcode"])
+        z.writestr(tr("порядок.txt"), tr("\n".join(lines)) + "\n")
+    name = file_stem(c) + ".zip"
+    ascii_name = name.encode("ascii", "replace").decode().replace("?", "_")
+    return Response(buf.getvalue(), media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{ascii_name}"; '
+                                                    f"filename*=UTF-8''{quote(name)}"})
 
 
 @app.post("/api/calibration/info")

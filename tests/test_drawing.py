@@ -276,12 +276,12 @@ def test_out_of_reach_gives_no_gcode_and_fit_reach_fixes_it():
     assert c.rotation == 0 and make_drawing_gcode(c)
 
 
-def test_unmeasured_travel_warns_and_uses_sheet():
+def test_unmeasured_travel_warns_and_uses_work_area():
     s = base_settings()
     s.printer.travel = None
     c = compose_drawing(s)
     assert any("не измерен" in w for w in c.warnings)
-    assert c.reach == (2, 2, 295, 208)
+    assert c.reach[:3] == (0, 0, s.printer.work_w - s.printer.safety_margin)
 
 
 def test_gcode_template_and_determinism():
@@ -414,3 +414,60 @@ def test_drawing_api():
     bad = client.post("/api/drawing/gcode", json=s)
     assert bad.status_code == 422 and bad.json()["errors"]
     assert preview_payload(compose_drawing(Settings.model_validate(s)))["unreachable"]
+
+
+def test_striped_image_hatch_fill_at_zero():
+    from PIL import Image, ImageDraw
+    img = Image.new("L", (400, 300), 255)
+    d = ImageDraw.Draw(img)
+    for i, h in enumerate((6, 12, 20)):
+        d.rectangle((20, 40 + i * 80, 380, 40 + i * 80 + h), fill=0)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", dpi=(254, 254))
+    s = base_settings(put_file("stripes.png", buf.getvalue()))
+    s.drawing.imp.raster_mode = "fill"
+    s.drawing.placement.scale_mode = "one_to_one"
+    s.drawing.placement.anchor = "zero"
+    c = compose_drawing(s)
+    assert c.errors == []
+    pts = [p for st in c.strokes for p in st]
+    assert min(p[0] for p in pts) == pytest.approx(0, abs=0.05) and min(p[1] for p in pts) == pytest.approx(0, abs=0.3)
+    assert all(abs(st[0][1] - st[-1][1]) < 1e-9 for st in c.strokes)
+    assert len(c.strokes) == pytest.approx((0.7 + 1.3 + 2.1) / 0.4, abs=3)
+    assert make_drawing_gcode(c)
+
+
+def test_work_areas_bounds_count_and_zip_name(monkeypatch):
+    from urllib.parse import unquote
+
+    from fastapi.testclient import TestClient
+
+    from handwriter.drawing import pipeline
+    from handwriter.server import app
+    from handwriter.settings import Settings
+    s = Settings()
+    s.drawing.sheet.format, s.drawing.sheet.width, s.drawing.sheet.height = "A3", 297, 420
+    s.drawing.split.offsets = {"0": (40.0, 0.0)}
+    assert any("вне хода карандаша" in e for e in compose_drawing(s).errors)
+    s.drawing.split.offsets = {}
+    s.drawing.split.areas = 1
+    assert any("Выбрано рабочих областей: 1" in e for e in compose_drawing(s).errors)
+    s.drawing.split.areas = 0
+    monkeypatch.setattr(pipeline, "file_stem", lambda c: "чертёж")
+    r = TestClient(app).post("/api/drawing/zip", json=s.model_dump(mode="json"))
+    assert r.status_code == 200 and "чертёж.zip" in unquote(r.headers["content-disposition"])
+
+
+def test_zero_anchor_with_weights_and_forced_areas_test_files():
+    from handwriter.drawing.pipeline import make_all_files
+    from handwriter.settings import Settings, Travel
+    s = Settings()
+    s.drawing.placement.anchor = "zero"
+    s.drawing.weights.enabled = True
+    assert compose_drawing(s).errors == []
+    s = Settings()
+    s.drawing.sheet.orientation = "portrait"
+    s.drawing.split.areas = 3
+    s.printer.travel = Travel(x_min=-3, x_max=200, y_min=-3, y_max=215)
+    c = compose_drawing(s)
+    assert c.errors == [] and len(make_all_files(c, True)) == 2 * len(c.parts)

@@ -91,7 +91,8 @@ def generate_gcode(strokes: list[list[Point]], s: Settings, header: list[str] | 
     lines += [
         f"; pen up Z{up} down Z{down}, feed draw {fd} travel {ft} z {fz}, simplify {fmt(pr.simplify_tol)}",
         f"; travel X{fmt(box.x_min)}..{fmt(box.x_max)} Y{fmt(box.y_min)}..{fmt(box.y_max)}"
-        + ("" if box.measured else " (NOT MEASURED, sheet size used)")
+        + ("" if box.measured else " (NOT MEASURED, " + ("printer work area" if pr._use_work_area else "sheet size")
+                                     + " used)")
         + f", flip_x {int(pr.flip_x)} flip_y {int(pr.flip_y)}",
         f"; strokes {st.strokes}, draw {st.draw_mm:.0f} mm, travel {st.travel_mm:.0f} mm, est {st.time_s / 60:.1f} min",
         "G21",

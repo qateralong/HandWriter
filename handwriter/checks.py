@@ -26,8 +26,10 @@ def travel_box(s: Settings) -> TravelBox:
     t = s.printer.travel
     if t is not None:
         return TravelBox(t.x_min, t.x_max, t.y_min, t.y_max, True)
+    pr = s.printer
+    w, h = (pr.work_w, pr.work_h) if pr._use_work_area else (s.sheet.width, s.sheet.height)
     x0, y0 = to_machine((0.0, 0.0), s)
-    x1, y1 = to_machine((s.sheet.width, s.sheet.height), s)
+    x1, y1 = to_machine((w, h), s)
     return TravelBox(min(x0, x1), max(x0, x1), min(y0, y1), max(y0, y1), False)
 
 
@@ -80,7 +82,7 @@ def check_printer(s: Settings) -> tuple[list[str], list[str]]:
         errors.append("Допуск упрощения не может быть отрицательным")
 
     if pr.travel is None:
-        warnings.append("Ход карандаша не измерен: границы взяты по размеру листа")
+        warnings.append("Ход карандаша не измерен: границы взяты по рабочей зоне принтера (в «Почерке» — по размеру листа)")
     else:
         t = pr.travel
         if t.x_min >= t.x_max or t.y_min >= t.y_max:
@@ -95,8 +97,8 @@ def check_printer(s: Settings) -> tuple[list[str], list[str]]:
 def check_bounds(strokes_mm, s: Settings, limit: int = 5) -> list[str]:
     box = travel_box(s)
     m = s.printer.safety_margin
-    lo_x, hi_x = box.x_min + m, box.x_max - m
-    lo_y, hi_y = box.y_min + m, box.y_max - m
+    lo_x, hi_x = min(box.x_min + m, 0.0), max(box.x_max - m, 0.0)
+    lo_y, hi_y = min(box.y_min + m, 0.0), max(box.y_max - m, 0.0)
     bad = []
     count = 0
     for st in strokes_mm:

@@ -21,6 +21,14 @@ function bindFields() {
   });
   const t = S.printer.travel;
   $("travelMeasured").checked = !!t;
+  const reach = (a, b, flip) => Math.max(0, ...(flip ? [-a, -b] : [a, b]));
+  [["work_w", t && reach(t.x_min, t.x_max, S.printer.flip_x)], ["work_h", t && reach(t.y_min, t.y_max, S.printer.flip_y)]].forEach(([k, v]) => {
+    const el = document.querySelector(`[data-path="printer.${k}"]`);
+    el.disabled = !!t;
+    if (t) el.value = Math.round(v);
+  });
+  $("workHint").textContent = t ? "Окно достижимости измерено — рабочая зона взята из него (поля выше только показывают размер)."
+    : "Сколько карандаш проходит от нуля (угол листа в упорах) по X и Y. Если окно ниже измерено, используется оно.";
   if (t) lastTravel = { ...t };
   document.querySelectorAll("[data-travel]").forEach((el) => { el.value = lastTravel[el.dataset.travel]; el.disabled = !t; });
   document.querySelectorAll("[data-table]").forEach((el) => {
@@ -292,12 +300,12 @@ $("fileInput").addEventListener("change", async (e) => {
   } catch (err) { $("busy").textContent = ""; alert("Файл не загружен: " + err.message); }
 });
 
-async function download(name, text) {
+async function download(name, text, zip) {
   if (window.showSaveFilePicker) {
     try {
       const h = await window.showSaveFilePicker({
         suggestedName: name, startIn: "downloads",
-        types: [{ description: "Gcode", accept: { "text/plain": [".gcode"] } }],
+        types: [zip ? { description: "Zip", accept: { "application/zip": [".zip"] } } : { description: "Gcode", accept: { "text/plain": [".gcode"] } }],
       });
       const w = await h.createWritable();
       await w.write(text); await w.close();
@@ -309,7 +317,7 @@ async function download(name, text) {
       console.warn("showSaveFilePicker:", e);
     }
   }
-  const blob = new Blob([text], { type: "text/plain" });
+  const blob = text instanceof Blob ? text : new Blob([text], { type: "text/plain" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
@@ -348,7 +356,18 @@ async function getFiles(query) {
     await saveFiles(r.files);
   } catch (e) { showMessages(e.data?.errors || [e.message], P?.warnings || []); }
 }
-$("btnGcode").onclick = () => getFiles("");
+async function getZip() {
+  try {
+    const r = await fetch("/api/drawing/zip", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(S) });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); throw Object.assign(new Error(r.statusText), { data: d }); }
+    const cd = r.headers.get("Content-Disposition") || "";
+    const star = cd.match(/filename\*=UTF-8''([^;]+)/)?.[1];
+    const name = star ? decodeURIComponent(star) : cd.match(/filename="(.+?)"/)?.[1] || "drawing.zip";
+    await download(name, await r.blob(), true);
+  } catch (e) { showMessages(e.data?.errors || [e.message], P?.warnings || []); }
+}
+$("btnGcode").onclick = () => ((P?.parts?.length || 0) > 1 ? getZip() : getFiles(""));
+
 $("btnTests").onclick = () => getFiles("?test=true");
 
 function rotText(r) { return r === 0 ? "без поворота" : `поворот ${r}° против часовой`; }
@@ -359,7 +378,7 @@ function cardSvg(part) {
   const a = toPass([part.region[0], part.region[1]], r, W, H), b = toPass([part.region[2], part.region[3]], r, W, H);
   const cx0 = Math.max(0, Math.min(a[0], b[0])), cx1 = Math.min(Wp, Math.max(a[0], b[0]));
   const cy0 = Math.max(0, Math.min(a[1], b[1])), cy1 = Math.min(Hp, Math.max(a[1], b[1]));
-  let s = `<rect x="${px(0)}" y="${py(Hp)}" width="${Wp * k}" height="${Hp * k}" fill="#fff" stroke="#888"/>`;
+  let s = `<rect x="${px(0)}" y="${py(Hp)}" width="${Wp * k}" height="${Hp * k}" style="fill:var(--paper)" stroke="#888"/>`;
   s += `<rect x="${px(cx0)}" y="${py(cy1)}" width="${(cx1 - cx0) * k}" height="${(cy1 - cy0) * k}" fill="${rgba(r, .35)}"/>`;
   const win = P.passes.windows[r].safe;
   s += `<rect x="${px(Math.max(win[0], 0))}" y="${py(Math.min(win[3], Hp))}" width="${(Math.min(win[2], Wp) - Math.max(win[0], 0)) * k}" height="${(Math.min(win[3], Hp) - Math.max(win[1], 0)) * k}" fill="none" stroke="#c0392b" stroke-dasharray="3 2"/>`;
@@ -375,14 +394,15 @@ function renderParts() {
   const box = $("partCards"), parts = P.parts || [];
   const sel = $("viewMode"), cur = sel.value;
   sel.innerHTML = `<option value="0">лист, все проходы</option>` +
-    parts.map((q) => `<option value="${q.index}">проход ${q.index} на столе (${q.rotation}°)</option>`).join("");
-  sel.value = parts.some((q) => String(q.index) === cur) ? cur : "0";
-  $("btnGcode").textContent = parts.length > 1 ? `Скачать ${parts.length} файла проходов` : "Скачать gcode";
+    parts.map((q) => `<option value="${q.index}">область ${q.index} на столе (${q.rotation}°)</option>`).join("");
+  sel.insertAdjacentHTML("afterbegin", `<option value="areas">рабочие области (${parts.length})</option>`);
+  sel.value = cur === "areas" || parts.some((q) => String(q.index) === cur) ? cur : (parts.length ? "areas" : "0");
+  $("btnGcode").textContent = parts.length > 1 ? `Скачать архив: ${parts.length} области (.zip)` : "Скачать gcode";
   $("btnTests").textContent = parts.length > 1 ? "Тестовые файлы проходов" : "Тестовый файл прохода";
   $("btnTests").disabled = $("btnGcode").disabled = P.errors.length > 0 || !parts.length;
-  if (!parts.length) { box.innerHTML = `<div class="hint">Проходов нет: сначала исправь ошибки внизу.</div>`; return; }
+  if (!parts.length) { box.innerHTML = `<div class="hint">Областей нет: сначала исправь ошибки внизу.</div>`; return; }
   box.innerHTML = parts.length > 1
-    ? `<div class="hint">Запускай файлы по порядку. После каждого прохода поверни лист, поставь указанный угол в упоры и опусти карандаш в этот угол до касания (ноль).</div>` : "";
+    ? `<div class="hint">Запускай файлы по порядку. После каждой области поверни лист, поставь указанный угол в упоры и опусти карандаш в этот угол до касания (ноль).</div>` : "";
   parts.forEach((q, i) => {
     const prev = i ? parts[i - 1].rotation : 0;
     const turn = i === 0 ? rotText(q.rotation) + " относительно раскладки" : `от прохода ${i}: поверни ещё на ${((q.rotation - prev) % 360 + 360) % 360}° против часовой`;
@@ -390,7 +410,7 @@ function renderParts() {
     const div = document.createElement("div");
     div.className = "card"; div.style.borderLeftColor = rgba(q.rotation, .9);
     div.innerHTML = `
-      <div class="top"><b>Проход ${q.index} из ${parts.length} · ${q.rotation}°</b><span class="kv">файл ${i + 1} по порядку</span></div>
+      <div class="top"><b>Область ${q.index} из ${parts.length} · ${q.rotation}°</b><span class="kv">файл ${i + 1} по порядку</span></div>
       <div class="cbody">
         ${cardSvg(q)}
         <div>
@@ -435,6 +455,40 @@ function fit() {
   view.ox = (r.width - W * view.k) / 2 - x0 * view.k;
   view.oy = (r.height + H * view.k) / 2 + y0 * view.k;
 }
+function partBounds(part) {
+  const [Wp, Hp] = part.pass_size, raw = P.passes.windows[part.rotation].raw;
+  return [Math.min(0, raw[0]) - 12, Math.min(0, raw[1]) - 12, Math.max(Wp, raw[2]) + 5, Math.max(Hp, raw[3]) + 5];
+}
+let areaPanels = [];
+const areaView = { f: 1, px: 0, py: 0 };
+const isAreas = () => $("viewMode").value === "areas" && !!P?.parts?.length;
+const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function drawAreas() {
+  areaPanels = [];
+  const parts = P.parts, n = parts.length, r = cv.getBoundingClientRect();
+  const cols = n === 1 ? 1 : n === 2 ? (r.width >= r.height ? 2 : 1) : 2, rows = Math.ceil(n / cols);
+  const ch = r.height / rows, saved = { ...view };
+  parts.forEach((part, i) => {
+    const last = i === n - 1 && n % cols !== 0, cw = last ? r.width : r.width / cols;
+    const x = last ? 0 : (i % cols) * cw, y = Math.floor(i / cols) * ch;
+    const [x0, y0, x1, y1] = partBounds(part), pad = 18, top = 46;
+    view.k = Math.max(0.05, Math.min((cw - 2 * pad) / (x1 - x0), (ch - top - pad) / (y1 - y0)));
+    view.ox = x + (cw - (x1 - x0) * view.k) / 2 - x0 * view.k;
+    view.oy = y + top + (ch - top - pad + (y1 - y0) * view.k) / 2 + y0 * view.k;
+    const cx = x + cw / 2, cy = y + ch / 2;
+    view.ox = cx + (view.ox - cx) * areaView.f + areaView.px;
+    view.oy = cy + (view.oy - cy) * areaView.f + areaView.py;
+    view.k *= areaView.f;
+    areaPanels.push({ x, y, cw, ch, k: view.k, ox: view.ox, oy: view.oy, part });
+    ctx.save(); ctx.beginPath(); ctx.rect(x, y, cw, ch); ctx.clip();
+    labelBox = { x, cw };
+    drawTable(part, x, y, true);
+    labelBox = null;
+    ctx.restore();
+    ctx.save(); ctx.strokeStyle = "rgba(128,128,128,.5)"; ctx.strokeRect(x + .5, y + .5, cw - 1, ch - 1); ctx.restore();
+  });
+  Object.assign(view, saved);
+}
 function tablePart() {
   const k = Number($("viewMode").value || 0);
   return k > 0 && P?.parts?.[k - 1] ? P.parts[k - 1] : null;
@@ -448,7 +502,7 @@ function toPass([u, v], r, W, H) {
 }
 function partColor(k, a) {
   const part = P?.parts?.[k - 1];
-  return part ? rgba(part.rotation, a) : `rgba(29,29,31,${a})`;
+  return part ? rgba(part.rotation, a) : cssVar("--ink");
 }
 function drawStrokes(T, only) {
 
@@ -478,25 +532,71 @@ function drawStrokes(T, only) {
   }
   ctx.restore();
 }
+function fitText(t, w) {
+  if (ctx.measureText(t).width <= w) return t;
+  while (t.length > 1 && ctx.measureText(t + "…").width > w) t = t.slice(0, -1);
+  return t + "…";
+}
+let labelBox = null;
+function label(t, x, y, color, align = "left") {
+  ctx.save(); ctx.font = "11px system-ui"; ctx.textAlign = align;
+  const w = ctx.measureText(t).width, box = labelBox || { x: 0, cw: cv.getBoundingClientRect().width };
+  let x0 = align === "right" ? x - w : align === "center" ? x - w / 2 : x;
+  x0 = Math.max(box.x + 4, Math.min(x0, box.x + box.cw - w - 4));
+  ctx.textAlign = "left"; x = x0;
+  ctx.globalAlpha = .85; ctx.fillStyle = cssVar("--paper"); ctx.fillRect(x0 - 3, y - 11, w + 6, 15);
+  ctx.globalAlpha = 1; ctx.fillStyle = color; ctx.fillText(t, x, y); ctx.restore();
+}
 function drawSeams(T) {
   if (!P.seams?.length) return;
   ctx.save();
-  for (const sm of P.seams) {
+  for (const [i, sm] of P.seams.entries()) {
     const ov = P.overlap;
     const a = sm.axis === 0 ? [[sm.s - ov, sm.span[0]], [sm.s + ov, sm.span[1]]] : [[sm.span[0], sm.s - ov], [sm.span[1], sm.s + ov]];
     const p0 = T(a[0]), p1 = T(a[1]);
-    ctx.fillStyle = "rgba(0,0,0,.06)";
+    ctx.globalAlpha = .08; ctx.fillStyle = cssVar("--ink");
     ctx.fillRect(Math.min(sx(p0[0]), sx(p1[0])), Math.min(sy(p0[1]), sy(p1[1])), Math.abs(sx(p1[0]) - sx(p0[0])), Math.abs(sy(p1[1]) - sy(p0[1])));
     const b = sm.axis === 0 ? [[sm.s, sm.span[0]], [sm.s, sm.span[1]]] : [[sm.span[0], sm.s], [sm.span[1], sm.s]];
     const q0 = T(b[0]), q1 = T(b[1]);
-    ctx.setLineDash([10, 4, 2, 4]); ctx.strokeStyle = "rgba(0,0,0,.55)"; ctx.lineWidth = 1.2;
+    ctx.globalAlpha = .6; ctx.setLineDash([10, 4, 2, 4]); ctx.strokeStyle = cssVar("--ink"); ctx.lineWidth = 1.2;
     ctx.beginPath(); ctx.moveTo(sx(q0[0]), sy(q0[1])); ctx.lineTo(sx(q1[0]), sy(q1[1])); ctx.stroke();
-    ctx.setLineDash([]); ctx.fillStyle = "rgba(0,0,0,.65)"; ctx.font = "11px system-ui";
-    ctx.fillText(`шов ${sm.axis === 0 ? "x" : "y"} = ${sm.s.toFixed(1)}`, sx(q1[0]) + 4, sy(q1[1]) + 12);
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+    const [a0, a1] = sy(q0[1]) >= sy(q1[1]) && sx(q0[0]) <= sx(q1[0]) ? [q0, q1] : [q1, q0];
+    const f = .1 + .18 * (i % 4);
+    const mx = sx(a0[0]) + (sx(a1[0]) - sx(a0[0])) * f, my = sy(a0[1]) + (sy(a1[1]) - sy(a0[1])) * f;
+    label(`шов ${sm.axis === 0 ? "x" : "y"} = ${sm.s.toFixed(1)}`, mx + 5, my - 4, cssVar("--ink"));
   }
   ctx.restore();
 }
-function drawTable(part) {
+function drawDims() {
+  if (!P?.strokes?.length) return;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const st of P.strokes) for (const [x, y] of st.p) {
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  const off = 14, a = 5;
+  ctx.save();
+  ctx.strokeStyle = "#0b7a5a"; ctx.fillStyle = "#0b7a5a"; ctx.lineWidth = 1; ctx.font = "bold 12px system-ui";
+  const arrow = (x, y, dx, dy) => { ctx.moveTo(x, y); ctx.lineTo(x + dx * a - dy * a * 0.5, y + dy * a + dx * a * 0.5); ctx.moveTo(x, y); ctx.lineTo(x + dx * a + dy * a * 0.5, y + dy * a - dx * a * 0.5); };
+  const X0 = sx(x0), X1 = sx(x1), Y0 = sy(y0), Y1 = sy(y1), yb = Y1 - off, xr = X1 + off;
+  ctx.beginPath();
+  ctx.moveTo(X0, Y1); ctx.lineTo(X0, yb - 4); ctx.moveTo(X1, Y1); ctx.lineTo(X1, yb - 4);
+  ctx.moveTo(X0, yb); ctx.lineTo(X1, yb); arrow(X0, yb, 1, 0); arrow(X1, yb, -1, 0);
+  ctx.moveTo(X1, Y0); ctx.lineTo(xr + 4, Y0); ctx.moveTo(X1, Y1); ctx.lineTo(xr + 4, Y1);
+  ctx.moveTo(xr, Y0); ctx.lineTo(xr, Y1); arrow(xr, Y0, 0, -1); arrow(xr, Y1, 0, 1);
+  ctx.stroke();
+  const w = `${(x1 - x0).toFixed(1)} мм`, h = `${(y1 - y0).toFixed(1)} мм`;
+  ctx.textAlign = "center"; ctx.fillText(w, (X0 + X1) / 2, yb - 5);
+  ctx.save(); ctx.translate(xr + 14, (Y0 + Y1) / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(h, 0, 0); ctx.restore();
+  ctx.textAlign = "left"; ctx.font = "11px system-ui";
+  const zr = P.parts?.length === 1 ? P.parts[0].rotation : (P.passes?.rotation ?? 0);
+  const [zx, zy] = P.passes ? P.passes.corners[P.passes.corner_of[zr]] : [0, 0];
+  const dxz = Math.abs(zx - (zx > 0 ? x1 : x0)), dyz = Math.abs(zy - (zy > 0 ? y1 : y0));
+  ctx.fillText(`угол от нуля: ${dxz.toFixed(1)} × ${dyz.toFixed(1)} мм`, X0, yb - 22);
+  ctx.restore();
+}
+
+function drawTable(part, ox = 0, oy = 0, brief = false) {
 
   const [W, H] = sheetWH(), r = part.rotation, [Wp, Hp] = part.pass_size;
   const T = (p) => { const q = toPass(p, r, W, H); return [q[0] + part.dx, q[1] + part.dy]; };
@@ -507,13 +607,14 @@ function drawTable(part) {
     if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1.2; ctx.strokeRect(sx(x0), sy(y1), (x1 - x0) * view.k, (y1 - y0) * view.k); }
     ctx.restore();
   };
-  rect([0, 0, tb.table_x, tb.table_y], "#e9ebee", tb.given ? "#9aa3ad" : null, null);
+  rect([0, 0, tb.table_x, tb.table_y], cssVar("--chip"), tb.given ? "#9aa3ad" : null, null);
   ctx.save(); ctx.shadowColor = "rgba(0,0,0,.18)"; ctx.shadowBlur = 10;
-  ctx.fillStyle = "#fff"; ctx.fillRect(sx(0), sy(Hp), Wp * view.k, Hp * view.k); ctx.restore();
+  ctx.fillStyle = cssVar("--paper"); ctx.fillRect(sx(0), sy(Hp), Wp * view.k, Hp * view.k); ctx.restore();
 
   const [c0, c1] = [T([part.region[0], part.region[1]]), T([part.region[2], part.region[3]])];
   rect([Math.min(c0[0], c1[0]), Math.min(c0[1], c1[1]), Math.max(c0[0], c1[0]), Math.max(c0[1], c1[1])], rgba(r, .08), null, null);
   rect(win.raw, null, "#c0392b", [7, 4]);
+  label(`рабочая зона ${Math.round(win.raw[2] - win.raw[0])}×${Math.round(win.raw[3] - win.raw[1])} мм`, sx(win.raw[2]) + 6, sy(win.raw[3]) + 4, "#c0392b");
   rect(win.safe, null, "rgba(192,57,43,.6)", null);
   drawSeams(T);
   if (S.drawing.show_travel) {
@@ -523,16 +624,23 @@ function drawTable(part) {
   }
   drawStrokes(T, part.index);
 
-  ctx.save(); ctx.strokeStyle = "#333"; ctx.lineWidth = 5;
+  ctx.save(); ctx.strokeStyle = cssVar("--text"); ctx.lineWidth = 5;
   ctx.beginPath(); ctx.moveTo(sx(0) - 4, sy(Math.min(60, Hp))); ctx.lineTo(sx(0) - 4, sy(0) + 4); ctx.lineTo(sx(Math.min(60, Wp)), sy(0) + 4); ctx.stroke();
   ctx.fillStyle = "#2f5fb3"; ctx.beginPath(); ctx.arc(sx(0), sy(0), 5, 0, Math.PI * 2); ctx.fill();
-  ctx.font = "bold 13px system-ui"; ctx.fillStyle = "#555";
+  ctx.font = "bold 13px system-ui"; ctx.fillStyle = cssVar("--muted");
   for (const [name, c] of Object.entries(P.passes.corners)) {
     const [x, y] = toPass(c, r, W, H);
     ctx.fillText(name, sx(x) + (x > 0 ? 4 : -14), sy(y) + (y > 0 ? -4 : 16));
   }
   ctx.fillStyle = rgba(r, 1); ctx.font = "bold 13px system-ui";
-  ctx.fillText(`Проход ${part.index}: так лист лежит на столе — поворот ${r}°, в упоре угол ${part.corner} (${part.corner_name}), ноль в нём`, 10, 20);
+  if (brief) {
+    const w = (areaPanels.at(-1)?.cw || cv.getBoundingClientRect().width) - 20;
+    ctx.fillText(fitText(`Область ${part.index} из ${P.parts.length} · поворот ${r}°`, w), ox + 10, oy + 18);
+    ctx.font = "12px system-ui"; ctx.fillStyle = cssVar("--muted");
+    ctx.fillText(fitText(`в упоре угол ${part.corner} (${part.corner_name}), ноль в нём`, w), ox + 10, oy + 36);
+  } else {
+    ctx.fillText(`Область ${part.index}: так лист лежит на столе — поворот ${r}°, в упоре угол ${part.corner} (${part.corner_name}), ноль в нём`, ox + 10, oy + 20);
+  }
   ctx.restore();
 }
 const sx = (x) => view.ox + x * view.k;
@@ -570,10 +678,11 @@ function draw() {
   const [W, H] = sheetWH();
   const part = tablePart();
   if (part) { drawTable(part); return; }
+  if ($("viewMode").value === "areas" && P?.parts?.length) { drawAreas(); return; }
 
   ctx.save();
   ctx.shadowColor = "rgba(0,0,0,.18)"; ctx.shadowBlur = 12; ctx.shadowOffsetY = 2;
-  ctx.fillStyle = "#fff"; ctx.fillRect(sx(0), sy(H), W * view.k, H * view.k);
+  ctx.fillStyle = cssVar("--paper"); ctx.fillRect(sx(0), sy(H), W * view.k, H * view.k);
   ctx.restore();
 
   const ps = P?.passes;
@@ -602,7 +711,7 @@ function draw() {
   }
 
   if (ps) {
-    ctx.save(); ctx.font = "bold 13px system-ui"; ctx.fillStyle = "#555";
+    ctx.save(); ctx.font = "bold 13px system-ui"; ctx.fillStyle = cssVar("--muted");
     for (const [name, [cx, cy]] of Object.entries(ps.corners)) {
       ctx.fillText(name, sx(cx) + (cx > 0 ? 4 : -14), sy(cy) + (cy > 0 ? -4 : 14));
     }
@@ -644,6 +753,7 @@ function draw() {
   drawSeams((p) => p);
 
   drawStrokes((p) => p, 0);
+  drawDims();
 
   if (P.unreachable.length) {
     ctx.save(); ctx.lineCap = "round"; ctx.strokeStyle = "#e0241b"; ctx.lineWidth = Math.max(2.5, 0.8 * view.k);
@@ -662,6 +772,7 @@ function draw() {
 
 cv.addEventListener("wheel", (e) => {
   e.preventDefault();
+  if (isAreas()) { areaView.f = Math.min(50, Math.max(0.2, areaView.f * Math.exp(-e.deltaY * 0.0015))); draw(); return; }
   const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
   const f = Math.exp(-e.deltaY * 0.0015);
   const k = Math.min(200, Math.max(0.2, view.k * f));
@@ -670,17 +781,23 @@ cv.addEventListener("wheel", (e) => {
   draw();
 }, { passive: false });
 let drag = null;
-cv.addEventListener("mousedown", (e) => { drag = { x: e.clientX, y: e.clientY, ox: view.ox, oy: view.oy }; cv.classList.add("drag"); });
+cv.addEventListener("mousedown", (e) => { drag = { x: e.clientX, y: e.clientY, ox: view.ox, oy: view.oy, px: areaView.px, py: areaView.py }; cv.classList.add("drag"); });
 window.addEventListener("mouseup", () => { drag = null; cv.classList.remove("drag"); });
 window.addEventListener("mousemove", (e) => {
   const r = cv.getBoundingClientRect();
-  if (drag) { view.ox = drag.ox + e.clientX - drag.x; view.oy = drag.oy + e.clientY - drag.y; view.auto = false; draw(); }
-  if (e.target === cv) {
+  if (drag && isAreas()) { areaView.px = drag.px + e.clientX - drag.x; areaView.py = drag.py + e.clientY - drag.y; draw(); }
+  else if (drag) { view.ox = drag.ox + e.clientX - drag.x; view.oy = drag.oy + e.clientY - drag.y; view.auto = false; draw(); }
+  if (e.target === cv && isAreas()) {
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const p = areaPanels.find((q) => mx >= q.x && mx < q.x + q.cw && my >= q.y && my < q.y + q.ch);
+    $("cursorPos").textContent = p ? `область ${p.part.index}: X ${((mx - p.ox) / p.k).toFixed(1)}  Y ${((p.oy - my) / p.k).toFixed(1)} мм` : "";
+  } else if (e.target === cv) {
     const x = (e.clientX - r.left - view.ox) / view.k, y = (view.oy - (e.clientY - r.top)) / view.k;
     $("cursorPos").textContent = `X ${x.toFixed(1)}  Y ${y.toFixed(1)} мм`;
   }
 });
-$("btnFit").onclick = () => { view.auto = true; fit(); draw(); };
+$("btnFit").onclick = () => { Object.assign(areaView, { f: 1, px: 0, py: 0 }); view.auto = true; fit(); draw(); };
+addEventListener("themechange", () => { if (typeof S !== "undefined" && S) draw(); });
 $("showReach").addEventListener("change", draw);
 $("showPasses").addEventListener("change", draw);
 new ResizeObserver(() => { if (view.auto && S) fit(); draw(); }).observe($("canvasWrap"));

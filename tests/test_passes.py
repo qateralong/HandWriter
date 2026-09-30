@@ -57,6 +57,7 @@ def test_rotation_180_formula():
 
 def test_a4_landscape_only_plus_x_gives_0_and_180():
     p = printer()
+    p.table.table_x, p.table.table_y = p.travel.x_max, p.travel.y_max
     plan = plan_sheet(*A4L, field(*A4L), p)
     assert plan.allowed == [0, 180]
     assert plan.rotations == [0, 180]
@@ -66,6 +67,7 @@ def test_a4_landscape_only_plus_x_gives_0_and_180():
 
 def test_a3_one_side_error_two_sides_four_passes():
     p = printer(x1=230, y1=225)
+    p.table.table_x, p.table.table_y = p.travel.x_max, p.travel.y_max
     plan = plan_sheet(*A3P, field(*A3P), p)
     assert not plan.ok and plan.allowed == []
     assert "не встаёт на стол" in plan.message and "+Y" in plan.message
@@ -78,19 +80,23 @@ def test_a3_one_side_error_two_sides_four_passes():
 
 def test_not_enough_reach_says_how_much():
     p = printer(x1=140)
+    p.table.table_x, p.table.table_y = p.travel.x_max, p.travel.y_max
     plan = plan_sheet(*A4L, field(*A4L), p)
     assert not plan.ok and plan.allowed == [0, 180]
     m = re.search(r"по оси X не хватает ([\d.]+) мм", plan.message)
     assert m, plan.message
     assert float(m.group(1)) == pytest.approx(10.5, abs=0.15)
-    p.travel.x_max = 151
+    p.travel.x_max = p.table.table_x = 151
     assert plan_sheet(*A4L, field(*A4L), p).rotations == [0, 180]
 
 
 def test_table_size_decides_overhang():
     p = printer(y1=205)
+    p.table.table_x, p.table.table_y = p.travel.x_max, p.travel.y_max
     assert plan_sheet(*A4L, field(*A4L), p).allowed == []
     p.table.table_y = 215
+    assert plan_sheet(*A4L, field(*A4L), p).rotations == [0, 180]
+    p.table.table_x = p.table.table_y = None
     assert plan_sheet(*A4L, field(*A4L), p).rotations == [0, 180]
 
 
@@ -174,7 +180,7 @@ def test_sheet_plan_in_preview():
     s.printer.table.table_y = 215
     ps = preview_payload(compose_drawing(s))["passes"]
     un = [tuple(r) for r in ps["map_uncovered"]]
-    union = 196 * 201 * 2 - 99 * 196
+    union = 198 * 203 * 2 - 99 * 196
     assert area(un) == pytest.approx(297 * 210 - union)
 
 

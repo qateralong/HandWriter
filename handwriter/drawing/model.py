@@ -44,10 +44,26 @@ class ImportResult:
     page: int = 1
     layers: dict[str, dict] = field(default_factory=dict)
     info: dict = field(default_factory=dict)
+    fill_mask: object = None
+    fill_px: float = 0.0
+
+    def fill_bbox(self) -> tuple[float, float, float, float] | None:
+        m = self.fill_mask
+        if m is None or not m.any():
+            return None
+        import numpy as np
+        rows = np.nonzero(m.any(axis=1))[0]
+        cols = np.nonzero(m.any(axis=0))[0]
+        px = self.fill_px
+        return cols[0] * px, -(rows[-1] + 1) * px, (cols[-1] + 1) * px, -rows[0] * px
 
     def bbox(self) -> tuple[float, float, float, float] | None:
         xs = [p[0] for pa in self.paths for p in pa.points]
         ys = [p[1] for pa in self.paths for p in pa.points]
+        fb = self.fill_bbox()
+        if fb:
+            xs += [fb[0], fb[2]]
+            ys += [fb[1], fb[3]]
         if not xs:
             return None
         return min(xs), min(ys), max(xs), max(ys)

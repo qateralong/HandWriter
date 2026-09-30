@@ -76,8 +76,7 @@ def make_table(printer, W: float, H: float, r: int = 0) -> Table:
     t = printer.travel
     m = printer.safety_margin
     if t is None:
-        Wp, Hp = pass_dims(r, W, H)
-        raw = (0.0, 0.0, Wp, Hp)
+        raw = (0.0, 0.0, float(printer.work_w), float(printer.work_h))
         measured = False
     else:
         fx = -1.0 if printer.flip_x else 1.0
@@ -88,7 +87,8 @@ def make_table(printer, W: float, H: float, r: int = 0) -> Table:
         measured = True
     tb = printer.table
     given = tb.table_x is not None and tb.table_y is not None
-    return Table(raw, (raw[0] + m, raw[1] + m, raw[2] - m, raw[3] - m), measured,
+    safe = (min(raw[0] + m, 0.0), min(raw[1] + m, 0.0), max(raw[2] - m, 0.0), max(raw[3] - m, 0.0))
+    return Table(raw, safe, measured,
                  tb.overhang_x, tb.overhang_y,
                  tb.table_x if tb.table_x is not None else raw[2],
                  tb.table_y if tb.table_y is not None else raw[3], given)
@@ -100,6 +100,8 @@ def overhang(r: int, W: float, H: float, table: Table) -> tuple[float, float]:
 
 
 def rotation_allowed(r: int, W: float, H: float, table: Table) -> tuple[bool, str]:
+    if not table.table_given:
+        return True, ""
     ox, oy = overhang(r, W, H, table)
     bad = []
     if ox > OVERHANG_TOL and not table.allow_x:

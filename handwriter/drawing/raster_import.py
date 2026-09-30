@@ -9,6 +9,7 @@ from .model import DPath, ImportResult
 
 MAX_SIDE = 3000
 DEFAULT_DPI = 300.0
+MAX_SKELETON_PX = 25000
 
 
 def import_raster(data: bytes, name: str, opts) -> ImportResult:
@@ -62,6 +63,18 @@ def import_raster(data: bytes, name: str, opts) -> ImportResult:
     mask = remove_small_holes(mask, max_size=8)
     px_mm = 25.4 / dpi
     res.info.update({"width_px": gray.size[0], "height_px": gray.size[1], "dpi": round(dpi, 1)})
+    too_complex = False
+    if opts.raster_mode != "fill":
+        from skimage.morphology import skeletonize
+        sk = int(skeletonize(mask).sum())
+        if sk > MAX_SKELETON_PX:
+            too_complex = True
+            res.warnings.append(f"Картинка слишком детальная для центральных линий ({sk} точек скелета): "
+                                "нарисована заливкой штрихами")
+    if opts.raster_mode == "fill" or too_complex:
+        res.fill_mask, res.fill_px = mask, px_mm
+        res.info["mode"] = "fill"
+        return res
     for p in mask_to_paths(mask, px_mm, 0.5 * px_mm, -0.5 * px_mm):
         res.paths.append(DPath(p, len(p) > 2 and p[0] == p[-1]))
     res.warnings.append("Растровая картинка: линии найдены по скелету, качество ниже, чем у вектора "

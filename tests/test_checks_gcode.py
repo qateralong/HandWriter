@@ -91,9 +91,10 @@ def test_point_outside_travel_refuses(settings):
 def test_safety_margin_is_enforced(settings):
     s = settings
     s.printer.travel = Travel(x_min=0, x_max=100, y_min=0, y_max=100)
-    assert check_bounds([[(1.0, 50.0)]], s)
-    assert check_bounds([[(2.0, 50.0)]], s) == []
+    assert check_bounds([[(0.0, 0.0), (1.0, 50.0)]], s) == []
+    assert check_bounds([[(-0.5, 50.0)]], s)
     assert check_bounds([[(98.5, 50.0)]], s)
+    assert check_bounds([[(98.0, 50.0)]], s) == []
 
 
 def test_flip_x_checks_machine_coordinates(settings):

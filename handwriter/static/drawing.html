@@ -4,12 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HandWriter — чертёж</title>
+<script src="/static/theme.js"></script>
 <link rel="icon" type="image/png" href="/static/icon.png">
 <style>
   :root {
     --bg: #eceae5; --panel: #fbfaf8; --line: #d9d5cc; --text: #222; --muted: #6d675d;
     --accent: #2f5fb3; --err: #b3261e; --warn: #8a5a00; --errbg: #fdecea; --warnbg: #fff4dc;
-    --field: #fff;
+    --field: #fff; --chip: #eee; --turnbg: #e7efff; --turn: #1d3f82; --reach: #9b2c20; color-scheme: light;
+  }
+  html[data-theme=dark] {
+    --bg: #1b1c1f; --panel: #232428; --line: #3a3c42; --text: #e4e2dd; --muted: #a09a90;
+    --accent: #5b8ee6; --err: #f28b82; --warn: #e0b35a; --errbg: #3b1f1d; --warnbg: #3a2f17;
+    --field: #2b2d32; --chip: #34363c; --turnbg: #22324f; --turn: #a9c4f5; --reach: #f28b82; color-scheme: dark;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
@@ -20,9 +26,10 @@
   h1 { font-size: 16px; margin: 4px 0 8px; }
   nav.tabs { display: flex; gap: 4px; margin: 0 0 6px; }
   nav.tabs a { flex: 1; text-align: center; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px;
-               text-decoration: none; color: var(--text); background: #fff; font-weight: 600; }
+               text-decoration: none; color: var(--text); background: var(--field); font-weight: 600; }
+  #themeBtn { flex: 0 0 auto; padding: 4px 9px; }
   nav.tabs a.on { background: var(--accent); color: #fff; border-color: var(--accent); }
-  details { border: 1px solid var(--line); border-radius: 8px; margin: 8px 0; background: #fff; }
+  details { border: 1px solid var(--line); border-radius: 8px; margin: 8px 0; background: var(--field); }
   summary { cursor: pointer; padding: 8px 10px; font-weight: 600; user-select: none; }
   details > .body { padding: 4px 10px 10px; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
@@ -34,11 +41,11 @@
     border-radius: 6px; padding: 5px 7px; width: 100%; }
   input:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent); border-color: var(--accent); }
   input:disabled, select:disabled { opacity: .5; }
-  button { font: inherit; border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--field); border-radius: 6px; padding: 6px 10px; cursor: pointer; }
   button:hover { border-color: var(--accent); }
   button.primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
   button.primary:disabled { opacity: .45; cursor: not-allowed; }
-  button.reach { width: 100%; margin-top: 6px; border-color: #c0392b; color: #9b2c20; font-weight: 600; }
+  button.reach { width: 100%; margin-top: 6px; border-color: #c0392b; color: var(--reach); font-weight: 600; }
   .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
   .row > select { flex: 1; min-width: 0; }
   .hint { font-size: 12px; color: var(--muted); margin: 4px 0; }
@@ -62,11 +69,11 @@
   table.layers { width: 100%; border-collapse: collapse; font-size: 12px; }
   table.layers td { padding: 2px 4px; border-top: 1px solid var(--line); }
   table.layers select { padding: 2px 4px; }
-  .pill { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 99px; background: #eee; color: var(--muted); }
+  .pill { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 99px; background: var(--chip); color: var(--muted); }
   .passinfo { font-size: 13px; margin: 4px 0; }
   .passinfo .sw { display: inline-block; width: 11px; height: 11px; border-radius: 2px; vertical-align: -1px; margin-right: 3px; }
-  .passinfo .turn { background: #e7efff; color: #1d3f82; border-radius: 6px; padding: 4px 8px; margin: 4px 0; font-weight: 600; }
-  .card { border: 1px solid var(--line); border-left-width: 5px; border-radius: 8px; padding: 8px 10px; margin: 8px 0; background: #fff; }
+  .passinfo .turn { background: var(--turnbg); color: var(--turn); border-radius: 6px; padding: 4px 8px; margin: 4px 0; font-weight: 600; }
+  .card { border: 1px solid var(--line); border-left-width: 5px; border-radius: 8px; padding: 8px 10px; margin: 8px 0; background: var(--field); }
   .card .top { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
   .card .top b { font-size: 14px; }
   .card .cbody { display: grid; grid-template-columns: 128px 1fr; gap: 8px; margin-top: 6px; font-size: 12.5px; }
@@ -83,15 +90,31 @@
   #wzSvg { background: #fff; border: 1px solid var(--line); border-radius: 6px; }
   @media (max-width: 800px) { .dbody { grid-template-columns: 1fr; } }
   @media (max-width: 800px) { body { grid-template-columns: 1fr; overflow: auto; } main { height: 90vh; } }
+  :root { --paper: #fff; --ink: #1d1d1f; --ink-done: #b9b6b0; }
+  html[data-paper=cream] { --paper: #fbf5e6; --ink: #2a2622; --ink-done: #c9bfae; }
+  html[data-paper=gray] { --paper: #e6e6e3; --ink: #1d1d1f; --ink-done: #a5a5a1; }
+  html[data-paper=dark] { --paper: #26282c; --ink: #ecebe6; --ink-done: #6c6c6a; }
+  nav.tabs { position: relative; }
+  #prefs { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; width: 250px; display: grid; gap: 8px; padding: 10px;
+           background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.2); }
+  #prefs[hidden] { display: none; }
+  aside .scroll { counter-reset: step; }
+  details.step > summary::before { counter-increment: step; content: counter(step); display: inline-grid; place-items: center;
+    width: 18px; height: 18px; margin-right: 6px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 11px; }
+  .group { margin: 16px 2px 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 </style>
 </head>
 <body>
 <aside>
   <div class="scroll">
-    <nav class="tabs"><a href="/" data-tab>Почерк</a><a href="/drawing" class="on">Чертёж</a></nav>
+    <nav class="tabs"><a href="/" data-tab>Почерк</a><a href="/drawing" class="on">Чертёж</a><button type="button" id="themeBtn" title="Оформление">⚙</button><div id="prefs" hidden>
+      <label class="f">Тема интерфейса<select id="prefTheme"><option value="auto">как в системе</option><option value="light">светлая</option><option value="dark">тёмная</option></select></label>
+      <label class="f">Лист в предпросмотре<select id="prefPaper"><option value="white">белая бумага</option><option value="cream">кремовая бумага</option><option value="gray">серая бумага</option><option value="dark">тёмный лист, светлый карандаш</option></select></label>
+    </div></nav>
     <h1>Чертёж <span class="pill">проходы</span></h1>
+    <div class="hint">Иди по шагам сверху вниз: файл → лист и масштаб → стол → скачай файлы кнопкой внизу.</div>
 
-    <details open>
+    <details class="step" open>
       <summary>Файл</summary>
       <div class="body">
         <div class="row"><select id="fileSelect"></select></div>
@@ -120,6 +143,13 @@
             <label class="f">DPI (0 = из файла)<input type="number" min="0" step="1" data-path="drawing.imp.raster_dpi"></label>
           </div>
           <label class="c"><input type="checkbox" data-path="drawing.imp.invert"> Светлые линии на тёмном фоне</label>
+          <div class="grid2">
+            <label class="f wide">Как рисовать картинку
+              <select data-path="drawing.imp.raster_mode"><option value="centerlines">центральные линии (контурный рисунок)</option><option value="fill">заливка штрихами (картинка из полос)</option></select></label>
+            <label class="f">Шаг штрихов, мм<input type="number" step="0.05" min="0.05" data-path="drawing.imp.fill_step"></label>
+            <label class="f">Направление штрихов
+              <select data-path="drawing.imp.fill_dir"><option value="auto">авто (вдоль полос)</option><option value="horizontal">горизонтально</option><option value="vertical">вертикально</option></select></label>
+          </div>
         </div>
         <div id="fillBox">
           <label class="c"><input type="checkbox" data-path="drawing.imp.fill_centerlines"> Мелкие закрашенные фигуры → центральные линии</label>
@@ -128,8 +158,7 @@
         </div>
       </div>
     </details>
-
-    <details open>
+    <details class="step" open>
       <summary>Лист и масштаб</summary>
       <div class="body">
         <div class="grid2">
@@ -149,6 +178,8 @@
             <input type="number" min="0.1" step="1" data-path="drawing.placement.percent" style="width:90px"> %</label>
         </div>
         <div class="grid2">
+          <label class="f wide">Где поставить
+            <select data-path="drawing.placement.anchor"><option value="center">по центру поля листа</option><option value="zero">углом в точку нуля (под карандашом)</option></select></label>
           <label class="f">Поле для «вписать», мм<input type="number" min="0" step="1" data-path="drawing.placement.margin"></label>
           <span></span>
           <label class="f">Сдвиг dx, мм<input type="number" step="0.5" data-path="drawing.placement.dx"></label>
@@ -159,7 +190,60 @@
         <button class="reach" id="btnPasses" title="Крупнейший масштаб, при котором все линии чертежа достаются хотя бы в одном допустимом проходе">Подобрать масштаб под проходы</button>
       </div>
     </details>
-
+    <details class="step" open>
+      <summary>Стол и проходы</summary>
+      <div class="body">
+        <div class="grid2">
+          <label class="f">Рабочая зона по X, мм<input type="number" step="1" min="1" data-path="printer.work_w"></label>
+          <label class="f">Рабочая зона по Y, мм<input type="number" step="1" min="1" data-path="printer.work_h"></label>
+        </div>
+        <div class="hint" id="workHint">Сколько карандаш проходит от нуля (угол листа в упорах) по X и Y. Если окно ниже измерено, используется оно.</div>
+        <button id="btnWizard" style="width:100%;margin-top:6px">Мастер калибровки достижимости…</button>
+        <label class="c"><input type="checkbox" id="travelMeasured"> Окно достижимости измерено</label>
+        <div class="hint">x_min..y_max относительно нуля (угол листа в упорах, G92 X0 Y0 Z0), как показывает экран принтера. Не измерено — берётся рабочая зона.</div>
+        <div class="grid2">
+          <label class="f">x_min<input type="number" step="1" data-travel="x_min"></label>
+          <label class="f">x_max<input type="number" step="1" data-travel="x_max"></label>
+          <label class="f">y_min<input type="number" step="1" data-travel="y_min"></label>
+          <label class="f">y_max<input type="number" step="1" data-travel="y_max"></label>
+          <label class="f">Запас до границ, мм<input type="number" step="0.5" min="0" data-path="printer.safety_margin"></label>
+          <span></span>
+        </div>
+        <label class="c"><input type="checkbox" data-path="printer.table.overhang_x"> Лист может выступать за стол в сторону +X</label>
+        <label class="c"><input type="checkbox" data-path="printer.table.overhang_y"> Лист может выступать за стол в сторону +Y</label>
+        <div class="grid2">
+          <label class="f">Стол от упора по +X, мм<input type="number" step="1" min="0" data-table="table_x" placeholder="= окно"></label>
+          <label class="f">Стол от упора по +Y, мм<input type="number" step="1" min="0" data-table="table_y" placeholder="= окно"></label>
+        </div>
+        <div class="hint">Стороны — в системе координат прохода: от угла листа в упорах вдоль его краёв. Размер стола не задан — край стола считается по краю окна. Лист поворачивают на 0/90/180/270° против часовой (сверху), в упор ставится другой угол (A–D на предпросмотре); зеркала не бывает.</div>
+      </div>
+    </details>
+    <details class="step" open>
+      <summary>Проходы и файлы</summary>
+      <div class="body">
+        <label class="f">Рабочих областей<select data-path="drawing.split.areas">
+          <option value="0">авто (сколько нужно)</option><option value="1">1</option><option value="2">2 (лист 0° и 180°)</option>
+          <option value="3">3</option><option value="4">4 (все углы в упоры)</option></select></label>
+        <div class="hint">Лист больше рабочей зоны рисуется по частям: каждая область — отдельный файл, между ними лист поворачивают другим углом в упоры.</div>
+        <div id="partCards"></div>
+        <details style="margin:8px 0 0">
+          <summary style="font-weight:500">Швы и крестики</summary>
+          <div class="body">
+            <div class="grid2">
+              <label class="f">Нахлёст у шва, мм<input type="number" step="0.1" min="0" data-path="drawing.split.overlap"></label>
+              <label class="f">Запас под сдвиг нуля, мм<input type="number" step="0.5" min="0" data-path="drawing.split.slack"></label>
+            </div>
+            <label class="c"><input type="checkbox" data-path="drawing.split.marks"> Контрольные крестики вдоль швов</label>
+            <div class="grid2">
+              <label class="f">Размах крестика, мм<input type="number" step="0.5" min="1" data-path="drawing.split.mark_size"></label>
+              <label class="f">Крестиков на шов<input type="number" step="1" min="1" max="10" data-path="drawing.split.mark_count"></label>
+            </div>
+            <div class="hint">Линия, пересекающая шов, режется по шву; каждый кусок продлевается вдоль линии на нахлёст — при сдвиге нуля на доли мм линия не рвётся. Крестики рисуются тонко в одних и тех же точках листа в обоих соседних проходах: по их сдвигу подбери dx, dy следующего прохода (в карточке).</div>
+          </div>
+        </details>
+      </div>
+    </details>
+    <div class="group">Дополнительные настройки</div>
     <details>
       <summary>Рамка по ГОСТ 2.104</summary>
       <div class="body">
@@ -179,7 +263,6 @@
         <div class="hint">Чертёж ставится над основной надписью или слева от неё (где крупнее). При изменении размера надписи её внутренние линии растягиваются пропорционально.</div>
       </div>
     </details>
-
     <details>
       <summary>Толщина линий</summary>
       <div class="body">
@@ -193,7 +276,6 @@
         <div id="layersBox"></div>
       </div>
     </details>
-
     <details>
       <summary>Путь карандаша</summary>
       <div class="body">
@@ -206,53 +288,6 @@
         <div class="hint">Порядок: сначала длинные непрерывные пути, потом остальные; внутри — ближайший следующий путь от места, где карандаш поднялся. Касающиеся концы склеиваются в один путь.</div>
       </div>
     </details>
-
-    <details open>
-      <summary>Стол и проходы</summary>
-      <div class="body">
-        <button id="btnWizard" style="width:100%">Мастер калибровки достижимости…</button>
-        <label class="c"><input type="checkbox" id="travelMeasured"> Окно достижимости измерено</label>
-        <div class="hint">x_min..y_max относительно нуля (угол листа в упорах, G92 X0 Y0 Z0), как показывает экран принтера. Не измерено — считается равным листу.</div>
-        <div class="grid2">
-          <label class="f">x_min<input type="number" step="1" data-travel="x_min"></label>
-          <label class="f">x_max<input type="number" step="1" data-travel="x_max"></label>
-          <label class="f">y_min<input type="number" step="1" data-travel="y_min"></label>
-          <label class="f">y_max<input type="number" step="1" data-travel="y_max"></label>
-          <label class="f">Запас до границ, мм<input type="number" step="0.5" min="0" data-path="printer.safety_margin"></label>
-          <span></span>
-        </div>
-        <label class="c"><input type="checkbox" data-path="printer.table.overhang_x"> Лист может выступать за стол в сторону +X</label>
-        <label class="c"><input type="checkbox" data-path="printer.table.overhang_y"> Лист может выступать за стол в сторону +Y</label>
-        <div class="grid2">
-          <label class="f">Стол от упора по +X, мм<input type="number" step="1" min="0" data-table="table_x" placeholder="= окно"></label>
-          <label class="f">Стол от упора по +Y, мм<input type="number" step="1" min="0" data-table="table_y" placeholder="= окно"></label>
-        </div>
-        <div class="hint">Стороны — в системе координат прохода: от угла листа в упорах вдоль его краёв. Размер стола не задан — край стола считается по краю окна. Лист поворачивают на 0/90/180/270° против часовой (сверху), в упор ставится другой угол (A–D на предпросмотре); зеркала не бывает.</div>
-      </div>
-    </details>
-
-    <details open>
-      <summary>Проходы и файлы</summary>
-      <div class="body">
-        <div id="partCards"></div>
-        <details style="margin:8px 0 0">
-          <summary style="font-weight:500">Швы и крестики</summary>
-          <div class="body">
-            <div class="grid2">
-              <label class="f">Нахлёст у шва, мм<input type="number" step="0.1" min="0" data-path="drawing.split.overlap"></label>
-              <label class="f">Запас под сдвиг нуля, мм<input type="number" step="0.5" min="0" data-path="drawing.split.slack"></label>
-            </div>
-            <label class="c"><input type="checkbox" data-path="drawing.split.marks"> Контрольные крестики вдоль швов</label>
-            <div class="grid2">
-              <label class="f">Размах крестика, мм<input type="number" step="0.5" min="1" data-path="drawing.split.mark_size"></label>
-              <label class="f">Крестиков на шов<input type="number" step="1" min="1" max="10" data-path="drawing.split.mark_count"></label>
-            </div>
-            <div class="hint">Линия, пересекающая шов, режется по шву; каждый кусок продлевается вдоль линии на нахлёст — при сдвиге нуля на доли мм линия не рвётся. Крестики рисуются тонко в одних и тех же точках листа в обоих соседних проходах: по их сдвигу подбери dx, dy следующего прохода (в карточке).</div>
-          </div>
-        </details>
-      </div>
-    </details>
-
     <details>
       <summary>Принтер (общие настройки с «Почерком»)</summary>
       <div class="body">
@@ -275,7 +310,7 @@
 <main>
   <div class="toolbar">
     <button id="btnFit">Весь лист</button>
-    <label class="c">Вид <select id="viewMode" style="width:auto"><option value="0">лист, все проходы</option></select></label>
+    <label class="c">Вид <select id="viewMode" style="width:auto"><option value="areas">рабочие области</option><option value="0">лист, все проходы</option></select></label>
     <label class="c"><input type="checkbox" data-path="drawing.show_travel"> Холостые ходы</label>
     <label class="c"><input type="checkbox" id="showReach" checked> Карта проходов</label>
     <label class="c"><input type="checkbox" id="showPasses" checked> Толщина линий</label>

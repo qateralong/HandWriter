@@ -15,8 +15,8 @@ from ..pipeline import GenerationRefused
 from ..settings import Settings
 from .model import ImportResult
 from .ops import dash_polyline, dedupe, expand_passes, join_paths, order_paths, outside_parts
-from .passes import (CORNER, CORNER_NAME, Plan, corner_point, covered_mask, make_table, pass_dims, plan_sheet,
-                     rotation_rects, segments, to_pass, uncovered)
+from .passes import (CORNER, CORNER_NAME, Plan, corner_point, covered_mask, intersect, make_table, pass_dims,
+                     plan_sheet, rotation_rects, segments, to_pass, uncovered)
 from .place import (Placement, SheetLayout, best_fit, place, reach_areas, scale_label, sheet_layout, shrink)
 from .sources import BUILTIN_TEST, load_drawing
 from .split import CutStats, Geometry, Mark, Node, control_marks, cut_stroke, mark_strokes, solve
@@ -96,6 +96,7 @@ class DrawingComposition:
     def part_settings(self, rotation: int) -> Settings:
         s = self.sheet_settings.model_copy(deep=True)
         s.sheet.width, s.sheet.height = pass_dims(rotation, self.layout.width, self.layout.height)
+        s.printer._use_work_area = True
         return s
 
     def pass_settings(self) -> Settings:
@@ -120,21 +121,30 @@ def field_rect(lay: SheetLayout, ds) -> Rect:
 
 
 def _file_segments(imp: ImportResult):
-    return segments([p.points for p in imp.paths])
+    lines = [p.points for p in imp.paths]
+    fb = imp.fill_bbox()
+    if fb:
+        x0, y0, x1, y1 = fb
+        lines.append([(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)])
+    return segments(lines)
 
 
 def fit_to_passes(imp: ImportResult, bbox, area: Rect, s_max: float, rects: list[Rect], pad: float,
-                  dx: float, dy: float) -> float:
+                  dx: float, dy: float, anchor: str = "center", areas: int = 0) -> float:
     rects = [r for r in (shrink(q, pad) for q in rects) if r[2] > r[0] and r[3] > r[1]]
     if not rects or s_max <= 0:
         return 0.0
+    groups = [list(g) for g in itertools.combinations(rects, areas)] if 0 < areas < len(rects) else [rects]
     A, B = _file_segments(imp)
     cxa, cya = (area[0] + area[2]) / 2, (area[1] + area[3]) / 2
     cxb, cyb = (bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2
 
     def ok(sc):
-        t = np.array([cxa - cxb * sc + dx, cya - cyb * sc + dy])
-        return bool(covered_mask(A * sc + t, B * sc + t, rects).all())
+        if anchor == "zero":
+            t = np.array([-bbox[0] * sc + pad + dx, -bbox[1] * sc + pad + dy])
+        else:
+            t = np.array([cxa - cxb * sc + dx, cya - cyb * sc + dy])
+        return any(bool(covered_mask(A * sc + t, B * sc + t, g).all()) for g in groups)
 
     if ok(s_max):
         return s_max
@@ -148,6 +158,43 @@ def fit_to_passes(imp: ImportResult, bbox, area: Rect, s_max: float, rects: list
         if hi - lo < s_max * 1e-4:
             break
     return lo if lo > 0 and ok(lo) else 0.0
+
+
+def hatch_mask(mask, px: float, pl: Placement, step: float, direction: str) -> list[list[Point]]:
+    if mask is None or not mask.any() or pl.scale <= 0:
+        return []
+    if direction == "auto":
+        starts_h = int(mask[:, 0].sum() + (mask[:, 1:] & ~mask[:, :-1]).sum()) / mask.shape[0]
+        starts_v = int(mask[0, :].sum() + (mask[1:, :] & ~mask[:-1, :]).sum()) / mask.shape[1]
+        cost_h = starts_h * mask.shape[0]
+        cost_v = starts_v * mask.shape[1]
+        direction = "horizontal" if cost_h <= cost_v else "vertical"
+    m = mask if direction == "horizontal" else mask.T
+    n_lines = m.shape[0]
+    step_px = max(step / pl.scale / px, 1e-6)
+    out: list[list[Point]] = []
+    k = 0
+    pos = step_px / 2
+    while pos < n_lines:
+        row = m[int(pos)]
+        if row.any():
+            d = np.diff(np.concatenate(([0], row.view(np.int8), [0])))
+            starts, ends = np.nonzero(d == 1)[0], np.nonzero(d == -1)[0]
+            segs = []
+            for a, b in zip(starts, ends):
+                if direction == "horizontal":
+                    y = -pos * px
+                    p0, p1 = pl.apply((a * px, y)), pl.apply((b * px, y))
+                else:
+                    x = pos * px
+                    p0, p1 = pl.apply((x, -a * px)), pl.apply((x, -b * px))
+                segs.append([p0, p1])
+            if k % 2:
+                segs = [s[::-1] for s in segs[::-1]]
+            out += segs
+            k += 1
+        pos += step_px
+    return out
 
 
 def compose_drawing(s: Settings) -> DrawingComposition:
@@ -178,13 +225,19 @@ def compose_drawing(s: Settings) -> DrawingComposition:
         lay_ = sheet_layout(ds, bbox_)
         allowed_, rects_, notes_ = rotation_rects(lay_.width, lay_.height, s.printer)
         windows = [rects_[r] for r in allowed_]
+        if ds.placement.anchor == "zero" and 0 in rects_:
+            windows = [rects_[0]]
         pl_ = place(ds, bbox_, lay_, windows, pad)
         if ds.placement.scale_mode == "fit_passes" and not pl_.errors:
-            sc = fit_to_passes(imp_, bbox_, pl_.area, pl_.scale, windows, pad, ds.placement.dx, ds.placement.dy)
+            sc = fit_to_passes(imp_, bbox_, pl_.area, pl_.scale, windows, pad, ds.placement.dx, ds.placement.dy,
+                               ds.placement.anchor, ds.split.areas)
             if sc <= 0:
                 pl_.errors.append("Подобрать масштаб под проходы не получается: середина поля листа не достаётся "
                                   "ни в одном допустимом проходе. Сдвинь чертёж (dx, dy), разреши другую сторону "
                                   "или проверь окно достижимости")
+            elif sc < pl_.scale and ds.placement.anchor == "zero":
+                pl_ = Placement(sc, -bbox_[0] * sc + pad + ds.placement.dx, -bbox_[1] * sc + pad + ds.placement.dy, pl_.area,
+                                pl_.errors, pl_.warnings)
             elif sc < pl_.scale:
                 k = sc / pl_.scale
                 cx, cy = (pl_.area[0] + pl_.area[2]) / 2, (pl_.area[1] + pl_.area[3]) / 2
@@ -235,6 +288,8 @@ def compose_drawing(s: Settings) -> DrawingComposition:
                           f"{c.dashed_solid}")
     for fl in lay.frame:
         groups[ds.weights.enabled and fl.thick].append(list(fl.points))
+    if imp.fill_mask is not None:
+        groups[False] += hatch_mask(imp.fill_mask, imp.fill_px, pl, ds.imp.fill_step, ds.imp.fill_dir)
 
     tol_rdp = s.printer.simplify_tol
     final: list[list[Point]] = []
@@ -302,7 +357,8 @@ def _split(c: DrawingComposition, final: list[list[Point]], flags: list[bool], W
     sheet = (0.0, 0.0, W, H)
     root = None
     used_slack = True
-    for k in range(1, len(c.allowed) + 1):
+    counts = [sp.areas] if sp.areas else range(1, len(c.allowed) + 1)
+    for k in counts:
         for combo in itertools.combinations(c.allowed, k):
             if not covered_mask(A, B, [rects[r] for r in combo]).all():
                 continue
@@ -316,8 +372,13 @@ def _split(c: DrawingComposition, final: list[list[Point]], flags: list[bool], W
         if root is not None:
             break
     if root is None:
-        c.errors.append("Проходы вместе достают весь чертёж, но провести между ними прямые швы не получилось. "
-                        "Уменьши масштаб («Подобрать масштаб под проходы» с запасом) или сдвинь чертёж")
+        if sp.areas and not any(covered_mask(A, B, [rects[r] for r in combo]).all()
+                                for combo in itertools.combinations(c.allowed, min(sp.areas, len(c.allowed)))):
+            c.errors.append(f"Выбрано рабочих областей: {sp.areas} — их не хватает, чтобы достать весь чертёж. "
+                            "Поставь «авто» или больше областей, либо уменьши масштаб")
+        else:
+            c.errors.append("Проходы вместе достают весь чертёж, но провести между ними прямые швы не получилось. "
+                            "Уменьши масштаб («Подобрать масштаб под проходы» с запасом) или сдвинь чертёж")
         ordered = order_paths(final, ds.paths.long_path, (0.0, 0.0))
         c.strokes = [q for _, q in ordered]
         c.thick = [flags[i] for i, _ in ordered]
@@ -353,6 +414,10 @@ def _split(c: DrawingComposition, final: list[list[Point]], flags: list[bool], W
         dx, dy = sp.offsets.get(str(rot), (0.0, 0.0))
         c.parts.append(PassPart(idx, rot, leaves[rot].core, mk + [q for _, q in ordered],
                                 [False] * len(mk) + [th[i] for i, _ in ordered], len(mk), float(dx), float(dy)))
+    empty = [r for r in sorted(leaves) if r not in {p.rotation for p in c.parts}]
+    if empty:
+        c.warnings.append(f"Областей по раскладке: {len(leaves)}, но в {len(empty)} из них нет линий "
+                          f"(поворот {', '.join(f'{r}°' for r in empty)}) — файлов будет {len(c.parts)}")
     c.drawing_passes = [p.rotation for p in c.parts]
     for p in c.parts:
         c.strokes += p.strokes
@@ -385,8 +450,10 @@ def _unreachable_message(c: DrawingComposition, s: Settings, bbox, pad: float, W
     if c.allowed and ds.placement.scale_mode != "fit_passes":
         area = c.placement.area
         s_fit, fit_area = best_fit(bbox, [shrink(a, pad) for a in lay.areas])
-        sc = fit_to_passes(c.imp, bbox, fit_area or area, s_fit, [c.pass_rects[r] for r in c.allowed], pad,
-                           ds.placement.dx, ds.placement.dy)
+        zero = ds.placement.anchor == "zero" and 0 in c.pass_rects
+        sc = fit_to_passes(c.imp, bbox, fit_area or area, s_fit,
+                           [c.pass_rects[0]] if zero else [c.pass_rects[r] for r in c.allowed], pad,
+                           ds.placement.dx, ds.placement.dy, ds.placement.anchor, ds.split.areas)
         if sc > 0:
             c.passes_percent = sc * 100
             msg += f"Уменьши масштаб до {math.floor(sc * 1000) / 10:g}% — кнопка «Подобрать масштаб под проходы». "
@@ -500,7 +567,9 @@ def part_test_strokes(c: DrawingComposition, part: PassPart) -> list[list[Point]
         fixed.append(rect_pts(reach))
     if len(c.parts) > 1:
         cell = (max(part.region[0], 0), max(part.region[1], 0), min(part.region[2], W), min(part.region[3], H))
-        out += dash_polyline(rect_pts(cell), [4.0, 3.0])
+        cell = intersect(cell, reach) if reach else cell
+        if cell:
+            out += dash_polyline(rect_pts(cell), [4.0, 3.0])
     o = c.settings.printer.test_mark_offset
     head = 2.0
     out.append([(o, o), (o + 20, o)])

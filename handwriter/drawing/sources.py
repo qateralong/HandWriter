@@ -50,7 +50,8 @@ def list_files() -> list[dict]:
 
 def _import_key(kind: str, imp) -> tuple:
     if kind == "raster":
-        return (imp.threshold_auto, imp.threshold if not imp.threshold_auto else None, imp.invert, imp.raster_dpi)
+        return (imp.threshold_auto, imp.threshold if not imp.threshold_auto else None, imp.invert, imp.raster_dpi,
+                imp.raster_mode)
     common = (imp.fill_centerlines, imp.fill_centerline_max if imp.fill_centerlines else None)
     if kind == "pdf":
         return (imp.pdf_page,) + common

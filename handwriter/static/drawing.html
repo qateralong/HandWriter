@@ -115,8 +115,19 @@
     <div class="hint">Иди по шагам сверху вниз: зона → файл → размещение → рамка → проверь и скачай файлы кнопкой внизу.</div>
 
     <details class="step" open>
-      <summary>Рабочая зона на листе A4</summary>
+      <summary>Рабочая зона на листе</summary>
       <div class="body">
+        <label class="c"><input type="checkbox" data-path="drawing.a3.enabled"> <b>Лист A3 (4 захода)</b></label>
+        <div id="a3Box">
+          <div class="grid2">
+            <label class="f">X от, мм<input type="number" step="0.5" data-path="drawing.a3.x_min"></label>
+            <label class="f">X до, мм<input type="number" step="0.5" data-path="drawing.a3.x_max"></label>
+            <label class="f">Y от, мм<input type="number" step="0.5" data-path="drawing.a3.y_min"></label>
+            <label class="f">Y до, мм<input type="number" step="0.5" data-path="drawing.a3.y_max"></label>
+          </div>
+          <div class="hint">Лист A3 кладётся на метки 4 раза, каждый раз углом в дальний правый угол зоны; остальное свисает вперёд и влево. Зона — где карандаш пишет по листу, в координатах принтера; карандаш стартует в 0, 0 и возвращается туда. Между заходами: поворот на 180°, потом на 90° по часовой, потом на 180°. Левое поле рамки — у дальнего края листа в 1-м заходе.</div>
+        </div>
+        <div id="a4Box">
         <div class="grid2">
           <label class="f">X от, мм<input type="number" step="0.5" data-path="drawing.marked.x_min"></label>
           <label class="f">X до, мм<input type="number" step="0.5" data-path="drawing.marked.x_max"></label>
@@ -125,6 +136,7 @@
           <label class="f" style="display:none">Длина листа, мм<input type="number" step="1" min="1" data-path="drawing.marked.length"></label>
         </div>
         <div class="hint">Лист лежит на метках принтера. Зона — где карандаш пишет по этому листу, в координатах принтера; карандаш стартует в 0, 0 и возвращается туда. Если лист длиннее зоны, будет 2 захода: после первого лист поворачивается на 180° и кладётся на те же метки. Левое поле рамки — у дальнего края листа («Y до»).</div>
+        </div>
       </div>
     </details>
     <details class="step" open>
@@ -246,6 +258,7 @@
     <details class="step" open>
       <summary>Рамка по ГОСТ 2.104</summary>
       <div class="body">
+        <div class="hint">Поля ниже действуют всегда. Если рамка уже есть в файле — не ставь галочку «Рамка»: при «Вписать в лист» или «Подобрать масштаб под заходы» рамка файла встанет точно на эти поля, а виды и штамп останутся 1:1 (сжимаются только пустые полосы).</div>
         <label class="c"><input type="checkbox" data-path="drawing.frame.enabled"> Рамка</label>
         <div class="grid2">
           <label class="f">Слева, мм<input type="number" step="0.5" min="0" data-path="drawing.frame.left"></label>

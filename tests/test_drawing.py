@@ -486,3 +486,19 @@ def test_marked_sheet_two_runs_from_zero_line():
     for f in make_all_files(c):
         ys = [float(m) for m in re.findall(r"^G[01] .*Y(-?[\d.]+)", f["gcode"], re.M)]
         assert 0 <= min(ys) and max(ys) <= mk.y_max and f["gcode"].rstrip().splitlines()[-2].startswith("G0 X0.00 Y0.00")
+
+
+def test_a3_four_runs_cover_sheet_inside_zones():
+    import re
+
+    from handwriter.drawing.pipeline import make_all_files
+    from handwriter.settings import Settings
+    s = Settings()
+    s.drawing.a3.enabled = True
+    s.drawing.frame.enabled = True
+    c = compose_drawing(s)
+    assert c.errors == [] and [p.rotation for p in c.parts] == [0, 180, 90, 270]
+    for f in make_all_files(c):
+        xs = [float(v) for v in re.findall(r"^G1 .*X(-?[\d.]+)", f["gcode"], re.M)]
+        ys = [float(v) for v in re.findall(r"^G1 .*Y(-?[\d.]+)", f["gcode"], re.M)]
+        assert 0 <= min(xs) and max(xs) <= 239 and 0 <= min(ys) and max(ys) <= 190

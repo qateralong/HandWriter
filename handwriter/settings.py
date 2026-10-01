@@ -198,6 +198,14 @@ class MarkedSheet(_M):
     length: float = Field(297.0, gt=0, le=2000)
 
 
+class A3Sheet(_M):
+    enabled: bool = False
+    x_min: float = 0.0
+    x_max: float = 239.0
+    y_min: float = 0.0
+    y_max: float = 190.0
+
+
 class DrawingSettings(_M):
     file: str = "builtin:test"
     imp: DrawingImport = Field(default_factory=DrawingImport)
@@ -208,6 +216,7 @@ class DrawingSettings(_M):
     paths: DrawingPaths = Field(default_factory=DrawingPaths)
     split: DrawingSplit = Field(default_factory=DrawingSplit)
     marked: MarkedSheet = Field(default_factory=MarkedSheet)
+    a3: A3Sheet = Field(default_factory=A3Sheet)
     show_travel: bool = True
 
 

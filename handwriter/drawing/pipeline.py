@@ -3,7 +3,7 @@ from __future__ import annotations
 import itertools
 import math
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
@@ -16,9 +16,9 @@ from ..settings import Settings, Travel
 from .model import ImportResult
 from .ops import dash_polyline, dedupe, expand_passes, join_paths, order_paths, outside_parts
 from .passes import (CORNER, CORNER_NAME, Plan, apply_affine, corner_point, covered_mask, intersect, invert_affine,
-                     make_table, marked_affine, marked_rects, pass_dims, plan_sheet, rotation_rects, segments, to_pass,
+                     make_table, A3_RUNS, a3_affine, a3_rects, marked_affine, marked_rects, pass_dims, plan_sheet, rotation_rects, segments, to_pass,
                      uncovered)
-from .place import (Placement, SheetLayout, best_fit, place, reach_areas, scale_label, sheet_layout, shrink)
+from .place import (Placement, SheetLayout, anchor_of, fixed_mode, best_fit, place, reach_areas, scale_label, sheet_layout, shrink)
 from .sources import BUILTIN_TEST, load_drawing
 from .split import CutStats, Geometry, Mark, Node, control_marks, cut_stroke, mark_strokes, solve
 
@@ -58,6 +58,7 @@ class DrawingComposition:
     pass_rects: dict[int, Rect] = field(default_factory=dict)
     rotation_notes: list[str] = field(default_factory=list)
     sheet_plan: Plan | None = None
+    frame_fitted: bool = False
     drawing_passes: list[int] | None = None
     parts: list[PassPart] = field(default_factory=list)
     split: Node | None = None
@@ -86,10 +87,13 @@ class DrawingComposition:
 
     @property
     def marked(self) -> bool:
-        return self.settings.drawing.marked.enabled
+        return fixed_mode(self.settings.drawing)
 
     def affine(self, r: int):
-        return marked_affine(self.settings.drawing.marked, self.layout.width, self.layout.height, r)
+        ds = self.settings.drawing
+        if ds.a3.enabled:
+            return a3_affine(ds.a3, self.layout.width, self.layout.height, r)
+        return marked_affine(ds.marked, self.layout.width, self.layout.height, r)
 
     def to_machine(self, p: Point, r: int) -> Point:
         if self.marked:
@@ -115,7 +119,8 @@ class DrawingComposition:
         s.sheet.width, s.sheet.height = pass_dims(rotation, self.layout.width, self.layout.height)
         s.printer._use_work_area = True
         if self.marked:
-            mk = self.settings.drawing.marked
+            ds = self.settings.drawing
+            mk = ds.a3 if ds.a3.enabled else ds.marked
             s.printer.safety_margin = 0.0
             s.printer.travel = Travel(x_min=min(mk.x_min, 0.0), x_max=max(mk.x_max, 0.0),
                                       y_min=min(mk.y_min, 0.0), y_max=max(mk.y_max, 0.0))
@@ -142,6 +147,50 @@ def field_rect(lay: SheetLayout, ds) -> Rect:
     return (m, m, lay.width - m, lay.height - m)
 
 
+def _band_map(lo: float, hi: float, busy: list[tuple[float, float]], target: float):
+    spans = sorted((max(a, lo), min(b, hi)) for a, b in busy if b > lo and a < hi)
+    merged: list[list[float]] = []
+    for a, b in spans:
+        if merged and a <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], b)
+        else:
+            merged.append([a, b])
+    empty = (hi - lo) - sum(b - a for a, b in merged)
+    room = empty + target - (hi - lo)
+    if empty <= 1e-6 or room < 0:
+        return None
+    k = room / empty
+    src, dst, cur, pos = [lo], [0.0], lo, 0.0
+    for a, b in merged:
+        pos += (a - cur) * k
+        src += [a, b]
+        dst += [pos, pos + b - a]
+        pos += b - a
+        cur = b
+    src.append(hi)
+    dst.append(pos + (hi - cur) * k)
+    return lambda v: float(np.interp(v, src, dst))
+
+
+def fit_frame_to_margins(imp: ImportResult, tw: float, th: float) -> ImportResult | None:
+    bb = imp.bbox()
+    if bb is None or imp.fill_mask is not None or not imp.paths:
+        return None
+    x0, y0, x1, y1 = bb
+    eps = 0.002 * max(x1 - x0, y1 - y0)
+    on_edge = lambda p: all(min(abs(x - x0), abs(x - x1)) < eps for x, _ in p.points) or         all(min(abs(y - y0), abs(y - y1)) < eps for _, y in p.points)
+    inner = [p for p in imp.paths if not on_edge(p)]
+    if len(inner) == len(imp.paths):
+        return None
+    fx = _band_map(x0, x1, [(min(x for x, _ in p.points), max(x for x, _ in p.points)) for p in inner], tw)
+    fy = _band_map(y0, y1, [(min(y for _, y in p.points), max(y for _, y in p.points)) for p in inner], th)
+    if fx is None or fy is None:
+        return None
+    paths = [replace(p, points=[(fx(x), fy(y)) for x, y in p.points]) for p in imp.paths]
+    texts = [replace(t, x=fx(t.x), y=fy(t.y)) for t in imp.texts]
+    return replace(imp, paths=paths, texts=texts)
+
+
 def _file_segments(imp: ImportResult):
     lines = [p.points for p in imp.paths]
     fb = imp.fill_bbox()
@@ -164,6 +213,8 @@ def fit_to_passes(imp: ImportResult, bbox, area: Rect, s_max: float, rects: list
     def ok(sc):
         if anchor == "zero":
             t = np.array([-bbox[0] * sc + pad + dx, -bbox[1] * sc + pad + dy])
+        elif anchor == "left":
+            t = np.array([area[0] - bbox[0] * sc + dx, cya - cyb * sc + dy])
         else:
             t = np.array([cxa - cxb * sc + dx, cya - cyb * sc + dy])
         return any(bool(covered_mask(A * sc + t, B * sc + t, g).all()) for g in groups)
@@ -220,10 +271,19 @@ def hatch_mask(mask, px: float, pl: Placement, step: float, direction: str) -> l
 
 
 def compose_drawing(s: Settings) -> DrawingComposition:
-    if s.drawing.marked.enabled:
+    if s.drawing.a3.enabled:
+        s = s.model_copy(deep=True)
+        s.drawing.marked.enabled = False
+        s.drawing.split.areas = 0
+        sh = s.drawing.sheet
+        sh.format, sh.orientation, sh.width, sh.height = "custom", "landscape", 420.0, 297.0
+        s.printer.travel = None
+    elif s.drawing.marked.enabled:
         s = s.model_copy(deep=True)
         mk, sh = s.drawing.marked, s.drawing.sheet
+        s.drawing.split.areas = 0
         sh.format, sh.orientation = "custom", "landscape"
+        s.printer.travel = None
         sh.width, sh.height = mk.length, max(mk.x_max - mk.x_min, 1.0)
     ds = s.drawing
     c = DrawingComposition(settings=s)
@@ -235,6 +295,14 @@ def compose_drawing(s: Settings) -> DrawingComposition:
         c.errors += imp.errors
         return c
     bbox = imp.bbox()
+    if bbox is not None and fixed_mode(ds) and not ds.frame.enabled and ds.placement.scale_mode in ("fit", "fit_passes"):
+        f = ds.frame
+        pw, ph = (420.0, 297.0) if ds.a3.enabled else (ds.marked.length, ds.marked.x_max - ds.marked.x_min)
+        fitted = fit_frame_to_margins(imp, pw - f.left - f.right, ph - f.top - f.bottom)
+        if fitted is not None:
+            imp, bbox = fitted, fitted.bbox()
+            c.imp = imp
+            c.frame_fitted = True
     if bbox is None:
         n_img = sum(1 for t in imp.texts if t.kind == "image")
         n_txt = len(imp.texts) - n_img
@@ -250,22 +318,28 @@ def compose_drawing(s: Settings) -> DrawingComposition:
 
     def setup(imp_, bbox_):
         lay_ = sheet_layout(ds, bbox_)
-        if ds.marked.enabled:
+        if ds.a3.enabled:
+            allowed_, rects_, notes_ = a3_rects(ds.a3, lay_.width, lay_.height)
+        elif ds.marked.enabled:
             allowed_, rects_, notes_ = marked_rects(ds.marked, lay_.width, lay_.height)
         else:
             allowed_, rects_, notes_ = rotation_rects(lay_.width, lay_.height, s.printer)
         windows = [rects_[r] for r in allowed_]
-        if ds.placement.anchor == "zero" and 0 in rects_:
+        if anchor_of(ds) == "zero" and 0 in rects_:
             windows = [rects_[0]]
         pl_ = place(ds, bbox_, lay_, windows, pad)
         if ds.placement.scale_mode == "fit_passes" and not pl_.errors:
             sc = fit_to_passes(imp_, bbox_, pl_.area, pl_.scale, windows, pad, ds.placement.dx, ds.placement.dy,
-                               ds.placement.anchor, ds.split.areas)
+                               anchor_of(ds), ds.split.areas)
             if sc <= 0:
                 pl_.errors.append("Подобрать масштаб под проходы не получается: середина поля листа не достаётся "
                                   "ни в одном допустимом проходе. Сдвинь чертёж (dx, dy), разреши другую сторону "
                                   "или проверь окно достижимости")
-            elif sc < pl_.scale and ds.placement.anchor == "zero":
+            elif sc < pl_.scale and anchor_of(ds) == "left":
+                cy = (pl_.area[1] + pl_.area[3]) / 2 - (bbox_[1] + bbox_[3]) / 2 * sc
+                pl_ = Placement(sc, pl_.area[0] - bbox_[0] * sc + ds.placement.dx, cy + ds.placement.dy, pl_.area,
+                                pl_.errors, pl_.warnings)
+            elif sc < pl_.scale and anchor_of(ds) == "zero":
                 pl_ = Placement(sc, -bbox_[0] * sc + pad + ds.placement.dx, -bbox_[1] * sc + pad + ds.placement.dy, pl_.area,
                                 pl_.errors, pl_.warnings)
             elif sc < pl_.scale:
@@ -295,10 +369,12 @@ def compose_drawing(s: Settings) -> DrawingComposition:
             c.errors.append("Рабочая зона: «до» должно быть больше «от» по X и по Y")
     e, w = check_printer(s2)
     c.errors += e
-    c.warnings += w
+    c.warnings += [m for m in w if not (fixed_mode(ds) and "не измерен" in m)]
+    if ds.a3.enabled and (ds.a3.x_max <= ds.a3.x_min or ds.a3.y_max <= ds.a3.y_min):
+        c.errors.append("Рабочая зона: «до» должно быть больше «от» по X и по Y")
     c.errors += pl.errors
     c.warnings += pl.warnings
-    c.sheet_plan = None if ds.marked.enabled else plan_sheet(W, H, field_rect(lay, ds), s.printer, "рабочее поле листа")
+    c.sheet_plan = None if fixed_mode(ds) else plan_sheet(W, H, field_rect(lay, ds), s.printer, "рабочее поле листа")
     if pl.errors:
         return c
 
@@ -434,7 +510,8 @@ def _split(c: DrawingComposition, final: list[list[Point]], flags: list[bool], W
         c.warnings.append("Контрольные крестики не поместились: у швов нет места, которое достают оба прохода "
                           "вдали от линий")
     idx = 0
-    for rot in sorted(pieces):
+    run_order = [r for r in A3_RUNS if r in pieces] if ds.a3.enabled else sorted(pieces)
+    for rot in run_order:
         mk = [q for m in c.marks if rot in m.passes for q in mark_strokes(m, sp.mark_size)]
         if not pieces[rot] and not mk:
             continue
@@ -484,10 +561,10 @@ def _unreachable_message(c: DrawingComposition, s: Settings, bbox, pad: float, W
     if c.allowed and ds.placement.scale_mode != "fit_passes":
         area = c.placement.area
         s_fit, fit_area = best_fit(bbox, [shrink(a, pad) for a in lay.areas])
-        zero = ds.placement.anchor == "zero" and 0 in c.pass_rects
+        zero = anchor_of(ds) == "zero" and 0 in c.pass_rects
         sc = fit_to_passes(c.imp, bbox, fit_area or area, s_fit,
                            [c.pass_rects[0]] if zero else [c.pass_rects[r] for r in c.allowed], pad,
-                           ds.placement.dx, ds.placement.dy, ds.placement.anchor, ds.split.areas)
+                           ds.placement.dx, ds.placement.dy, anchor_of(ds), ds.split.areas)
         if sc > 0:
             c.passes_percent = sc * 100
             msg += f"Уменьши масштаб до {math.floor(sc * 1000) / 10:g}% — кнопка «Подобрать масштаб под проходы». "

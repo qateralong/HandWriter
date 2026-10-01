@@ -202,6 +202,12 @@ const CORNER_NAME = { A: "левый нижний", B: "правый нижни�
 function renderPassInfo() {
   const ps = P.passes;
   if (!ps) { $("passInfo").innerHTML = ""; return; }
+  $("a3Box").style.display = S.drawing.a3.enabled ? "" : "none";
+  $("a4Box").style.display = S.drawing.a3.enabled ? "none" : "";
+  if (P.marked && S.drawing.a3.enabled) {
+    $("passInfo").innerHTML = `<div class="turn">Лист A3, заходов ${P.parts.length}: между заходами поворачивай лист на 180°, потом на 90° по часовой, потом на 180°. Карандаш стартует в 0, 0 и возвращается туда.</div>`;
+    return;
+  }
   if (P.marked) {
     $("passInfo").innerHTML = `<div class="turn">${P.parts.length === 1 ? "Хватает одного захода" : `Заходов ${P.parts.length}: перед 2-м поверни лист на 180° и положи на те же метки`}. Карандаш стартует в 0, 0 и возвращается туда.</div>`;
     return;
@@ -375,7 +381,10 @@ $("btnGcode").onclick = () => ((P?.parts?.length || 0) > 1 ? getZip() : getFiles
 $("btnTests").onclick = () => getFiles("?test=true");
 
 function rotText(r) { return r === 0 ? "без поворота" : `поворот ${r}° против часовой`; }
-const markedText = (q) => q.rotation === 180 ? "Лист <b>повёрнут на 180°</b>, на тех же метках; рисуется то, что в зоне"
+const A3_RUNS = [0, 180, 90, 270], A3_TURN = ["лист на метках, как положен", "поверни лист на 180°", "поверни лист на 90° по часовой", "поверни лист на 180°"];
+const zoneOf = () => S.drawing.a3.enabled ? S.drawing.a3 : S.drawing.marked;
+const runTurn = (q) => S.drawing.a3.enabled ? A3_TURN[A3_RUNS.indexOf(q.rotation)] : q.rotation === 180 ? "лист повёрнут на 180°" : "лист по меткам";
+const markedText = (q) => S.drawing.a3.enabled ? `Перед заходом: <b>${runTurn(q)}</b>; рисуется то, что в зоне` : q.rotation === 180 ? "Лист <b>повёрнут на 180°</b>, на тех же метках; рисуется то, что в зоне"
   : "Лист <b>на метках</b>; рисуется то, что в зоне";
 const aff = (m, p) => [m[0] * p[0] + m[1] * p[1] + m[4], m[2] * p[0] + m[3] * p[1] + m[5]];
 function markedCorners(part) {
@@ -424,7 +433,9 @@ function renderParts() {
   $("btnTests").textContent = parts.length > 1 ? "Тестовые файлы заходов" : "Тестовый файл";
   $("btnTests").disabled = $("btnGcode").disabled = P.errors.length > 0 || !parts.length;
   if (!parts.length) { box.innerHTML = `<div class="hint">Областей нет: сначала исправь ошибки внизу.</div>`; return; }
-  box.innerHTML = P.marked
+  box.innerHTML = P.marked && S.drawing.a3.enabled
+    ? `<div class="hint">Запускай файлы по порядку. Перед каждым поверни лист, как написано в карточке, и положи его углом на те же метки; карандаш — в 0, 0.</div>`
+    : P.marked
     ? `<div class="hint">Положи лист на метки, карандаш — в 0, 0, запусти файл 1.${parts.length > 1 ? " Затем поверни лист на 180°, положи на те же метки и запусти файл 2." : ""}</div>`
     : parts.length > 1
     ? `<div class="hint">Запускай файлы по порядку. После каждой области поверни лист, поставь указанный угол в упоры и опусти карандаш в этот угол до касания (ноль).</div>` : "";
@@ -632,7 +643,7 @@ function drawMarked(part, ox, oy, brief) {
   const reg = part.region, rc = [[reg[0], reg[1]], [reg[2], reg[1]], [reg[2], reg[3]], [reg[0], reg[3]]].map(T);
   ctx.save(); ctx.fillStyle = rgba(part.rotation, .08); ctx.beginPath();
   rc.forEach((p, i) => (i ? ctx.lineTo : ctx.moveTo).call(ctx, sx(p[0]), sy(p[1]))); ctx.closePath(); ctx.fill(); ctx.restore();
-  const mk = S.drawing.marked;
+  const mk = zoneOf(part);
   ctx.save(); ctx.setLineDash([7, 4]); ctx.strokeStyle = "#c0392b"; ctx.lineWidth = 1.3;
   ctx.strokeRect(sx(mk.x_min), sy(mk.y_max), (mk.x_max - mk.x_min) * view.k, (mk.y_max - mk.y_min) * view.k); ctx.restore();
   label(`рабочая зона X ${mk.x_min}–${mk.x_max}, Y ${mk.y_min}–${mk.y_max}`, sx(mk.x_max) - 4, sy(mk.y_min) + 14, "#c0392b", "right");
@@ -649,7 +660,7 @@ function drawMarked(part, ox, oy, brief) {
   for (const [name, c] of Object.entries(P.passes.corners)) { const [x, y] = T(c); ctx.fillText(name, sx(x) + (x > 0 ? 4 : -14), sy(y) + (y > 0 ? -4 : 16)); }
   ctx.fillStyle = rgba(part.rotation, 1);
   const w = (areaPanels.at(-1)?.cw || cv.getBoundingClientRect().width) - 20;
-  ctx.fillText(fitText(`Заход ${part.index} из ${P.parts.length} · ${part.rotation === 180 ? "лист повёрнут на 180°" : "лист по меткам"}`, w), ox + 10, oy + 18);
+  ctx.fillText(fitText(`Заход ${part.index} из ${P.parts.length} · ${runTurn(part)}`, w), ox + 10, oy + 18);
   ctx.font = "12px system-ui"; ctx.fillStyle = cssVar("--muted");
   ctx.fillText(fitText("так лист лежит на принтере; рисуется то, что в рабочей зоне", w), ox + 10, oy + 36);
   ctx.restore();
@@ -986,6 +997,7 @@ $("wzZero").onclick = (e) => { e.preventDefault(); calibFile("/api/calibration/z
   S = await api("GET", "/api/settings");
   S.drawing.marked.enabled = true;
   S.drawing.marked.length = 297;
+  S.drawing.split.areas = 0;
   await loadFiles();
   bindFields();
   fit();

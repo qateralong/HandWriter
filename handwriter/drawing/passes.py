@@ -366,6 +366,30 @@ def _marked_base(mk, W: float, H: float, r: int) -> Affine:
     return (1.0, 0.0, 0.0, 1.0, mk.x_min, mk.y_max - H)
 
 
+A3_RUNS = (0, 180, 90, 270)
+
+
+def a3_affine(z, W: float, H: float, r: int) -> Affine:
+    c, s = [(1, 0), (0, 1), (-1, 0), (0, -1)][((r + 270) % 360) // 90]
+    pts = [(c * u - s * v, s * u + c * v) for u, v in ((0, 0), (W, 0), (W, H), (0, H))]
+    return (float(c), float(-s), float(s), float(c), z.x_max - max(p[0] for p in pts), z.y_max - max(p[1] for p in pts))
+
+
+def a3_rects(z, W: float, H: float) -> tuple[list[int], dict[int, Rect], list[str]]:
+    allowed, rects, notes = [], {}, []
+    for i, r in enumerate(A3_RUNS):
+        m = a3_affine(z, W, H, r)
+        q = [invert_affine(m, p) for p in ((z.x_min, z.y_min), (z.x_max, z.y_max))]
+        R = intersect((min(q[0][0], q[1][0]), min(q[0][1], q[1][1]), max(q[0][0], q[1][0]), max(q[0][1], q[1][1])),
+                      (0.0, 0.0, W, H))
+        if R is None:
+            notes.append(f"заход {i + 1}: зона не заходит на лист")
+            continue
+        allowed.append(r)
+        rects[r] = R
+    return allowed, rects, notes
+
+
 def apply_affine(m: Affine, p: Point) -> Point:
     return (m[0] * p[0] + m[1] * p[1] + m[4], m[2] * p[0] + m[3] * p[1] + m[5])
 

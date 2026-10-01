@@ -70,7 +70,7 @@ def sheet_layout(ds, bbox: Rect | None) -> SheetLayout:
     f = ds.frame
     if not f.enabled:
         m = ds.placement.margin
-        lay.areas = [(m, m, W - m, H - m)]
+        lay.areas = [(f.left, f.bottom, W - f.right, H - f.top) if ds.marked.enabled or ds.a3.enabled else (m, m, W - m, H - m)]
         return lay
     x0, y0, x1, y1 = f.left, f.bottom, W - f.right, H - f.top
     lay.inner = (x0, y0, x1, y1)
@@ -134,6 +134,14 @@ def reach_areas(lay: SheetLayout, reach: list[Rect], pad: float = 0.0) -> list[R
     return [r for w in reach for r in (intersect(shrink(a, pad), shrink(w, pad)) for a in lay.areas) if r]
 
 
+def fixed_mode(ds) -> bool:
+    return ds.marked.enabled or ds.a3.enabled
+
+
+def anchor_of(ds) -> str:
+    return "left" if fixed_mode(ds) and not ds.frame.enabled else ds.placement.anchor
+
+
 def place(ds, bbox: Rect, lay: SheetLayout, reach: list[Rect], pad: float = 0.0) -> Placement:
     pl = ds.placement
     mode = pl.scale_mode
@@ -161,9 +169,11 @@ def place(ds, bbox: Rect, lay: SheetLayout, reach: list[Rect], pad: float = 0.0)
             what = "1:1" if mode == "one_to_one" else f"{pl.percent:g}%"
             warnings.append(f"При масштабе {what} чертёж {bw:.1f}×{bh:.1f} мм больше поля листа "
                             f"{aw:.1f}×{ah:.1f} мм; «вписать» дало бы {s_fit * 100:.1f}%")
-    if pl.anchor == "zero":
+    if anchor_of(ds) == "zero":
         return Placement(s, -bbox[0] * s + pad + pl.dx, -bbox[1] * s + pad + pl.dy, area, errors, warnings)
     cx = (area[0] + area[2]) / 2 - (bbox[0] + bbox[2]) / 2 * s
+    if anchor_of(ds) == "left":
+        cx = area[0] - bbox[0] * s
     cy = (area[1] + area[3]) / 2 - (bbox[1] + bbox[3]) / 2 * s
     return Placement(s, cx + pl.dx, cy + pl.dy, area, errors, warnings)
 

@@ -201,7 +201,13 @@ const CORNER_NAME = { A: "левый нижний", B: "правый нижни�
 
 function renderPassInfo() {
   const ps = P.passes;
+  $("markedBox").style.display = S.drawing.marked.enabled ? "" : "none";
+  $("stopsBox").style.display = S.drawing.marked.enabled ? "none" : "";
   if (!ps) { $("passInfo").innerHTML = ""; return; }
+  if (P.marked) {
+    $("passInfo").innerHTML = `<div class="turn">Лист по меткам: ${P.parts.length === 1 ? "хватает одного захода" : `заходов ${P.parts.length}, перед 2-м лист поворачивается на 180°`}. Ноль — карандаш на нижней линии.</div>`;
+    return;
+  }
   const sw = (r) => `<span class="sw" style="background:${rgba(r, .55)}"></span>`;
   const desc = (r) => `${sw(r)}${r}°, в упоре угол ${ps.corner_of[r]} (${CORNER_NAME[ps.corner_of[r]]})`;
   let h = "";
@@ -371,7 +377,26 @@ $("btnGcode").onclick = () => ((P?.parts?.length || 0) > 1 ? getZip() : getFiles
 $("btnTests").onclick = () => getFiles("?test=true");
 
 function rotText(r) { return r === 0 ? "без поворота" : `поворот ${r}° против часовой`; }
+const markedText = (q) => q.rotation === 180 ? "Лист <b>повёрнут на 180°</b>, по тем же меткам; рисуется то, что выше линии"
+  : "Лист <b>по меткам</b>, как лежит; рисуется всё выше линии";
+const aff = (m, p) => [m[0] * p[0] + m[1] * p[1] + m[4], m[2] * p[0] + m[3] * p[1] + m[5]];
+function markedCorners(part) {
+  const [W, H] = sheetWH();
+  return [[0, 0], [W, 0], [W, H], [0, H]].map((p) => aff(part.m, p));
+}
+function markedSvg(part) {
+  const cs = markedCorners(part), xs = cs.map((p) => p[0]).concat(0), ys = cs.map((p) => p[1]).concat(0);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const k = Math.min(110 / (x1 - x0), 88 / (y1 - y0)), px = (x) => 9 + (x - x0) * k, py = (y) => 96 - (y - y0) * k;
+  let s = `<polygon points="${cs.map((p) => `${px(p[0])},${py(p[1])}`).join(" ")}" style="fill:var(--paper)" stroke="#888"/>`;
+  const reg = part.region, rc = [[reg[0], reg[1]], [reg[2], reg[1]], [reg[2], reg[3]], [reg[0], reg[3]]].map((p) => aff(part.m, p));
+  s += `<polygon points="${rc.map((p) => `${px(p[0])},${py(p[1])}`).join(" ")}" fill="${rgba(part.rotation, .35)}"/>`;
+  s += `<line x1="${px(x0)}" y1="${py(0)}" x2="${px(x1)}" y2="${py(0)}" stroke="#c0392b" stroke-dasharray="3 2"/>`;
+  s += `<circle cx="${px(0)}" cy="${py(0)}" r="3" fill="#2f5fb3"/>`;
+  return `<svg viewBox="0 0 128 104">${s}</svg>`;
+}
 function cardSvg(part) {
+  if (part.m) return markedSvg(part);
 
   const [W, H] = sheetWH(), r = part.rotation, [Wp, Hp] = part.pass_size;
   const k = Math.min(110 / Wp, 80 / Hp), px = (x) => 12 + x * k, py = (y) => 92 - y * k;
@@ -401,7 +426,9 @@ function renderParts() {
   $("btnTests").textContent = parts.length > 1 ? "Тестовые файлы проходов" : "Тестовый файл прохода";
   $("btnTests").disabled = $("btnGcode").disabled = P.errors.length > 0 || !parts.length;
   if (!parts.length) { box.innerHTML = `<div class="hint">Областей нет: сначала исправь ошибки внизу.</div>`; return; }
-  box.innerHTML = parts.length > 1
+  box.innerHTML = P.marked
+    ? `<div class="hint">Положи лист по меткам, поставь карандаш в ноль на линии и запусти файл 1. Затем поверни лист на 180°, положи по тем же меткам и запусти файл 2.</div>`
+    : parts.length > 1
     ? `<div class="hint">Запускай файлы по порядку. После каждой области поверни лист, поставь указанный угол в упоры и опусти карандаш в этот угол до касания (ноль).</div>` : "";
   parts.forEach((q, i) => {
     const prev = i ? parts[i - 1].rotation : 0;
@@ -414,8 +441,8 @@ function renderParts() {
       <div class="cbody">
         ${cardSvg(q)}
         <div>
-          <div>Под карандаш (в упоры, ноль): <b>угол ${q.corner}</b> — ${q.corner_name}.</div>
-          <div class="kv">Лист: ${esc(turn)}.</div>
+          ${P.marked ? `<div>${markedText(q)}.</div>` : `<div>Под карандаш (в упоры, ноль): <b>угол ${q.corner}</b> — ${q.corner_name}.</div>
+          <div class="kv">Лист: ${esc(turn)}.</div>`}
           <div>≈ <b>${fmtTime(st.time_s)}</b>, путь ${st.draw_mm} мм, холостые ${st.travel_mm} мм, штрихов ${st.strokes}${q.marks ? `, крестиков ${q.marks}` : ""}.</div>
           <div class="kv" style="word-break:break-all">${esc(q.filename)}</div>
         </div>
@@ -445,8 +472,7 @@ function viewBounds() {
 
   const part = tablePart();
   if (!part) { const [W, H] = sheetWH(); return [0, 0, W, H]; }
-  const [Wp, Hp] = part.pass_size, raw = P.passes.windows[part.rotation].raw;
-  return [Math.min(0, raw[0]) - 12, Math.min(0, raw[1]) - 12, Math.max(Wp, raw[2]) + 5, Math.max(Hp, raw[3]) + 5];
+  return partBounds(part);
 }
 function fit() {
   const r = cv.getBoundingClientRect();
@@ -456,6 +482,10 @@ function fit() {
   view.oy = (r.height + H * view.k) / 2 + y0 * view.k;
 }
 function partBounds(part) {
+  if (part.m) {
+    const cs = markedCorners(part), xs = cs.map((p) => p[0]).concat(0), ys = cs.map((p) => p[1]).concat(0);
+    return [Math.min(...xs) - 10, Math.min(...ys) - 14, Math.max(...xs) + 10, Math.max(...ys) + 8];
+  }
   const [Wp, Hp] = part.pass_size, raw = P.passes.windows[part.rotation].raw;
   return [Math.min(0, raw[0]) - 12, Math.min(0, raw[1]) - 12, Math.max(Wp, raw[2]) + 5, Math.max(Hp, raw[3]) + 5];
 }
@@ -596,7 +626,39 @@ function drawDims() {
   ctx.restore();
 }
 
+function drawMarked(part, ox, oy, brief) {
+  const T = (p) => { const q = aff(part.m, p); return [q[0] + part.dx, q[1] + part.dy]; };
+  const cs = markedCorners(part), [bx0, , bx1, by1] = partBounds(part);
+  ctx.save(); ctx.globalAlpha = .07; ctx.fillStyle = "#27965a";
+  ctx.fillRect(sx(bx0), sy(by1), (bx1 - bx0) * view.k, by1 * view.k); ctx.restore();
+  ctx.save(); ctx.shadowColor = "rgba(0,0,0,.18)"; ctx.shadowBlur = 10; ctx.fillStyle = cssVar("--paper");
+  ctx.beginPath(); cs.forEach((p, i) => (i ? ctx.lineTo : ctx.moveTo).call(ctx, sx(p[0]), sy(p[1]))); ctx.closePath(); ctx.fill(); ctx.restore();
+  const reg = part.region, rc = [[reg[0], reg[1]], [reg[2], reg[1]], [reg[2], reg[3]], [reg[0], reg[3]]].map(T);
+  ctx.save(); ctx.fillStyle = rgba(part.rotation, .08); ctx.beginPath();
+  rc.forEach((p, i) => (i ? ctx.lineTo : ctx.moveTo).call(ctx, sx(p[0]), sy(p[1]))); ctx.closePath(); ctx.fill(); ctx.restore();
+  ctx.save(); ctx.setLineDash([7, 4]); ctx.strokeStyle = "#c0392b"; ctx.lineWidth = 1.3;
+  ctx.beginPath(); ctx.moveTo(sx(bx0), sy(0)); ctx.lineTo(sx(bx1), sy(0)); ctx.stroke(); ctx.restore();
+  label("линия нуля: выше неё карандаш достаёт", sx(bx1) - 4, sy(0) + 14, "#c0392b", "right");
+  drawSeams(T);
+  if (S.drawing.show_travel) {
+    ctx.save(); ctx.setLineDash([4, 4]); ctx.lineWidth = 0.8; ctx.strokeStyle = "rgba(226,120,30,.7)"; ctx.beginPath();
+    for (const [a, b, k] of P.travel) if (k === part.index) { const p = T(a), q = T(b); ctx.moveTo(sx(p[0]), sy(p[1])); ctx.lineTo(sx(q[0]), sy(q[1])); }
+    ctx.stroke(); ctx.restore();
+  }
+  drawStrokes(T, part.index);
+  ctx.save(); ctx.fillStyle = "#2f5fb3"; ctx.beginPath(); ctx.arc(sx(0), sy(0), 5, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  label("ноль (карандаш)", sx(0) + 8, sy(0) - 8, "#2f5fb3");
+  ctx.save(); ctx.font = "bold 13px system-ui"; ctx.fillStyle = cssVar("--muted");
+  for (const [name, c] of Object.entries(P.passes.corners)) { const [x, y] = T(c); ctx.fillText(name, sx(x) + (x > 0 ? 4 : -14), sy(y) + (y > 0 ? -4 : 16)); }
+  ctx.fillStyle = rgba(part.rotation, 1);
+  const w = (areaPanels.at(-1)?.cw || cv.getBoundingClientRect().width) - 20;
+  ctx.fillText(fitText(`Заход ${part.index} из ${P.parts.length} · ${part.rotation === 180 ? "лист повёрнут на 180°" : "лист по меткам"}`, w), ox + 10, oy + 18);
+  ctx.font = "12px system-ui"; ctx.fillStyle = cssVar("--muted");
+  ctx.fillText(fitText("так лист лежит на принтере; рисуется часть выше линии нуля", w), ox + 10, oy + 36);
+  ctx.restore();
+}
 function drawTable(part, ox = 0, oy = 0, brief = false) {
+  if (part.m) return drawMarked(part, ox, oy, brief);
 
   const [W, H] = sheetWH(), r = part.rotation, [Wp, Hp] = part.pass_size;
   const T = (p) => { const q = toPass(p, r, W, H); return [q[0] + part.dx, q[1] + part.dy]; };

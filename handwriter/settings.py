@@ -189,6 +189,14 @@ class DrawingSplit(_M):
     areas: int = Field(0, ge=0, le=4)
 
 
+class MarkedSheet(_M):
+    enabled: bool = False
+    tl_x: float = 0.0
+    tl_y: float = 200.0
+    tr_x: float = 210.0
+    tr_y: float = 200.0
+
+
 class DrawingSettings(_M):
     file: str = "builtin:test"
     imp: DrawingImport = Field(default_factory=DrawingImport)
@@ -198,6 +206,7 @@ class DrawingSettings(_M):
     weights: LineWeights = Field(default_factory=LineWeights)
     paths: DrawingPaths = Field(default_factory=DrawingPaths)
     split: DrawingSplit = Field(default_factory=DrawingSplit)
+    marked: MarkedSheet = Field(default_factory=MarkedSheet)
     show_travel: bool = True
 
 

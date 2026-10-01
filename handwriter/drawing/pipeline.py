@@ -12,11 +12,12 @@ from ..checks import check_bounds, check_printer, to_machine
 from ..gcode import compute_stats, fmt, generate_gcode
 from ..geometry import rdp
 from ..pipeline import GenerationRefused
-from ..settings import Settings
+from ..settings import Settings, Travel
 from .model import ImportResult
 from .ops import dash_polyline, dedupe, expand_passes, join_paths, order_paths, outside_parts
-from .passes import (CORNER, CORNER_NAME, Plan, corner_point, covered_mask, intersect, make_table, pass_dims,
-                     plan_sheet, rotation_rects, segments, to_pass, uncovered)
+from .passes import (CORNER, CORNER_NAME, Plan, apply_affine, corner_point, covered_mask, intersect, invert_affine,
+                     make_table, marked_affine, marked_rects, pass_dims, plan_sheet, rotation_rects, segments, to_pass,
+                     uncovered)
 from .place import (Placement, SheetLayout, best_fit, place, reach_areas, scale_label, sheet_layout, shrink)
 from .sources import BUILTIN_TEST, load_drawing
 from .split import CutStats, Geometry, Mark, Node, control_marks, cut_stroke, mark_strokes, solve
@@ -83,11 +84,27 @@ class DrawingComposition:
         r = self.rotation if self.rotation is not None else 0
         return self.pass_rects.get(r)
 
+    @property
+    def marked(self) -> bool:
+        return self.settings.drawing.marked.enabled
+
+    def affine(self, r: int):
+        return marked_affine(self.settings.drawing.marked, self.layout.width, self.layout.height, r)
+
+    def to_machine(self, p: Point, r: int) -> Point:
+        if self.marked:
+            return apply_affine(self.affine(r), p)
+        return to_pass(p, r, self.layout.width, self.layout.height)
+
+    def start_point(self, r: int) -> Point:
+        if self.marked:
+            return invert_affine(self.affine(r), (0.0, 0.0))
+        return corner_point(r, self.layout.width, self.layout.height)
+
     def part_strokes(self, part: PassPart, strokes: list[list[Point]] | None = None) -> list[list[Point]]:
-        W, H = self.layout.width, self.layout.height
         out = []
         for st in (part.strokes if strokes is None else strokes):
-            out.append([(q[0] + part.dx, q[1] + part.dy) for q in (to_pass(p, part.rotation, W, H) for p in st)])
+            out.append([(q[0] + part.dx, q[1] + part.dy) for q in (self.to_machine(p, part.rotation) for p in st)])
         return out
 
     def pass_strokes(self) -> list[list[Point]]:
@@ -97,6 +114,11 @@ class DrawingComposition:
         s = self.sheet_settings.model_copy(deep=True)
         s.sheet.width, s.sheet.height = pass_dims(rotation, self.layout.width, self.layout.height)
         s.printer._use_work_area = True
+        if self.marked:
+            W, H, m = self.layout.width, self.layout.height, s.printer.safety_margin
+            pts = [self.to_machine(q, rotation) for q in ((0, 0), (W, 0), (W, H), (0, H))]
+            s.printer.travel = Travel(x_min=min(min(p[0] for p in pts) - m, 0.0), x_max=max(max(p[0] for p in pts) + m, 0.0),
+                                      y_min=0.0, y_max=max(max(p[1] for p in pts) + m, 0.0))
         return s
 
     def pass_settings(self) -> Settings:
@@ -198,6 +220,9 @@ def hatch_mask(mask, px: float, pl: Placement, step: float, direction: str) -> l
 
 
 def compose_drawing(s: Settings) -> DrawingComposition:
+    if s.drawing.marked.enabled and s.drawing.sheet.orientation != "landscape":
+        s = s.model_copy(deep=True)
+        s.drawing.sheet.orientation = "landscape"
     ds = s.drawing
     c = DrawingComposition(settings=s)
     tol = ds.paths.curve_tol
@@ -223,7 +248,10 @@ def compose_drawing(s: Settings) -> DrawingComposition:
 
     def setup(imp_, bbox_):
         lay_ = sheet_layout(ds, bbox_)
-        allowed_, rects_, notes_ = rotation_rects(lay_.width, lay_.height, s.printer)
+        if ds.marked.enabled:
+            allowed_, rects_, notes_ = marked_rects(ds.marked, lay_.width, lay_.height)
+        else:
+            allowed_, rects_, notes_ = rotation_rects(lay_.width, lay_.height, s.printer)
         windows = [rects_[r] for r in allowed_]
         if ds.placement.anchor == "zero" and 0 in rects_:
             windows = [rects_[0]]
@@ -259,12 +287,21 @@ def compose_drawing(s: Settings) -> DrawingComposition:
     c.layout, c.sheet_settings, c.placement = lay, s2, pl
     c.allowed, c.pass_rects, c.rotation_notes = allowed, rects, notes
     c.reach_measured = s.printer.travel is not None
+    if ds.marked.enabled:
+        mk = ds.marked
+        if ds.sheet.format != "A4":
+            c.errors.append("Лист по меткам пока работает только для A4")
+        if min(mk.tl_y, mk.tr_y) <= 0:
+            c.errors.append("Верхние углы листа должны быть выше линии нуля (Y больше 0)")
+        d = math.hypot(mk.tr_x - mk.tl_x, mk.tr_y - mk.tl_y)
+        if abs(d - W) > 3:
+            c.warnings.append(f"Между верхними углами {d:.1f} мм, а ширина листа {W:g} мм: проверь координаты углов")
     e, w = check_printer(s2)
     c.errors += e
     c.warnings += w
     c.errors += pl.errors
     c.warnings += pl.warnings
-    c.sheet_plan = plan_sheet(W, H, field_rect(lay, ds), s.printer, "рабочее поле листа")
+    c.sheet_plan = None if ds.marked.enabled else plan_sheet(W, H, field_rect(lay, ds), s.printer, "рабочее поле листа")
     if pl.errors:
         return c
 
@@ -409,7 +446,7 @@ def _split(c: DrawingComposition, final: list[list[Point]], flags: list[bool], W
             for pts in join_paths([p for p, t in pieces[rot] if t == thick], ds.paths.join_tol):
                 strokes.append(pts)
                 th.append(thick)
-        ordered = order_paths(strokes, ds.paths.long_path, corner_point(rot, W, H))
+        ordered = order_paths(strokes, ds.paths.long_path, c.start_point(rot))
         idx += 1
         dx, dy = sp.offsets.get(str(rot), (0.0, 0.0))
         c.parts.append(PassPart(idx, rot, leaves[rot].core, mk + [q for _, q in ordered],
@@ -505,8 +542,10 @@ def part_header(c: DrawingComposition, part: PassPart, test: bool = False) -> tu
     header = [
         f"DRAWING: {ds.file if ds.file == BUILTIN_TEST else c.imp.name} ({c.imp.kind}"
         + (f", page {c.imp.page}" if c.imp.kind == "pdf" else "") + ")",
-        ("TEST FILE for " if test else "") + f"PASS {part.index}/{n}: rotate sheet {r} deg CCW, corner {part.corner} "
-        f"({_CORNER_EN[part.corner]} in layout) at the stops = zero",
+        ("TEST FILE for " if test else "") + (
+            f"PASS {part.index}/{n}: sheet on the printer marks, rotated {r} deg, pencil on the zero line"
+            if c.marked else f"PASS {part.index}/{n}: rotate sheet {r} deg CCW, corner {part.corner} "
+            f"({_CORNER_EN[part.corner]} in layout) at the stops = zero"),
         "run order: " + ", ".join(f"{p.index}) {part_filename(c, p, test)}" for p in c.parts),
         f"zero correction dx {fmt(part.dx)} dy {fmt(part.dy)} mm (pass coordinates)",
         f"scale {scale_label(pl.scale)} ({pl.scale * 100:.2f}%), mode {ds.placement.scale_mode}",
@@ -554,11 +593,7 @@ def part_test_strokes(c: DrawingComposition, part: PassPart) -> list[list[Point]
     r = part.rotation
 
     def rect_pts(q: Rect) -> list[Point]:
-        a = to_pass((q[0], q[1]), r, W, H)
-        b = to_pass((q[2], q[3]), r, W, H)
-        x0, x1 = sorted((a[0], b[0]))
-        y0, y1 = sorted((a[1], b[1]))
-        return [(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)]
+        return [c.to_machine(p, r) for p in ((q[0], q[1]), (q[2], q[1]), (q[2], q[3]), (q[0], q[3]), (q[0], q[1]))]
 
     out: list[list[Point]] = []
     fixed: list[list[Point]] = []
@@ -579,7 +614,7 @@ def part_test_strokes(c: DrawingComposition, part: PassPart) -> list[list[Point]
     for i in range(part.index):
         x = o + 25 + 2.5 * i
         out.append([(x, o - 1.5), (x, o + 1.5)])
-    marks = [to_pass_pts(st, r, W, H) for st in part.strokes[: part.marks]]
+    marks = [[c.to_machine(p, r) for p in st] for st in part.strokes[: part.marks]]
     shifted = [[(p[0] + part.dx, p[1] + part.dy) for p in st] for st in out + marks]
     return fixed + shifted
 
@@ -631,7 +666,7 @@ def preview_payload(c: DrawingComposition) -> dict:
     s2 = c.sheet_settings or c.settings
     out: dict = {"errors": c.errors, "warnings": c.warnings, "strokes": [], "travel": [], "unreachable": [],
                  "texts": [], "frame": [], "stats": compute_stats([], s2).as_dict(), "parts": [], "seams": [],
-                 "marks": []}
+                 "marks": [], "marked": c.marked}
     imp = c.imp
     if imp is not None:
         bb = imp.bbox()
@@ -686,7 +721,7 @@ def preview_payload(c: DrawingComposition) -> dict:
         st = compute_stats(c.part_strokes(p), c.part_settings(p.rotation)).as_dict()
         for k in totals:
             totals[k] += st[k]
-        corner = corner_point(p.rotation, W, H)
+        corner = c.start_point(p.rotation)
         travel += [[r2(a), r2(b), p.index] for a, b in _travel_on_sheet(p.strokes, corner)]
         pw, ph = pass_dims(p.rotation, W, H)
         out["parts"].append({
@@ -694,6 +729,7 @@ def preview_payload(c: DrawingComposition) -> dict:
             "region": rr(p.region), "stats": st, "marks": p.marks // 2, "dx": p.dx, "dy": p.dy,
             "filename": part_filename(c, p), "test_filename": part_filename(c, p, True),
             "errors": p.errors, "pass_size": [pw, ph],
+            "m": [round(v, 6) for v in c.affine(p.rotation)] if c.marked else None,
         })
     if c.parts:
         totals["draw_mm"] = round(totals["draw_mm"], 1)

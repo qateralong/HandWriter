@@ -193,6 +193,17 @@
     <details class="step" open>
       <summary>Стол и проходы</summary>
       <div class="body">
+        <label class="c"><input type="checkbox" data-path="drawing.marked.enabled"> <b>Лист по меткам на принтере (A4, 2 захода)</b></label>
+        <div id="markedBox">
+          <div class="grid2">
+            <label class="f">Левый верхний угол, X<input type="number" step="0.5" data-path="drawing.marked.tl_x"></label>
+            <label class="f">Левый верхний угол, Y<input type="number" step="0.5" data-path="drawing.marked.tl_y"></label>
+            <label class="f">Правый верхний угол, X<input type="number" step="0.5" data-path="drawing.marked.tr_x"></label>
+            <label class="f">Правый верхний угол, Y<input type="number" step="0.5" data-path="drawing.marked.tr_y"></label>
+          </div>
+          <div class="hint">Лист каждый раз кладётся по меткам в одно и то же место. Ноль — точка карандаша на нижней линии (Y = 0). Координаты верхних углов листа — как их показывает принтер, если подвести к ним карандаш. 1-й заход рисует всё выше линии; потом лист поворачивается на 180°, кладётся по тем же меткам, и 2-й заход дорисовывает остальное. Карандаш каждый раз начинает и заканчивает в нуле. Чертёж альбомный: его левый край (поле рамки 20 мм) — у дальнего края листа, правый — у ближнего.</div>
+        </div>
+        <div id="stopsBox">
         <div class="grid2">
           <label class="f">Рабочая зона по X, мм<input type="number" step="1" min="1" data-path="printer.work_w"></label>
           <label class="f">Рабочая зона по Y, мм<input type="number" step="1" min="1" data-path="printer.work_h"></label>
@@ -216,6 +227,7 @@
           <label class="f">Стол от упора по +Y, мм<input type="number" step="1" min="0" data-table="table_y" placeholder="= окно"></label>
         </div>
         <div class="hint">Стороны — в системе координат прохода: от угла листа в упорах вдоль его краёв. Размер стола не задан — край стола считается по краю окна. Лист поворачивают на 0/90/180/270° против часовой (сверху), в упор ставится другой угол (A–D на предпросмотре); зеркала не бывает.</div>
+        </div>
       </div>
     </details>
     <details class="step" open>

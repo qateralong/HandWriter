@@ -471,3 +471,18 @@ def test_zero_anchor_with_weights_and_forced_areas_test_files():
     s.printer.travel = Travel(x_min=-3, x_max=200, y_min=-3, y_max=215)
     c = compose_drawing(s)
     assert c.errors == [] and len(make_all_files(c, True)) == 2 * len(c.parts)
+
+
+def test_marked_sheet_two_runs_from_zero_line():
+    import re
+
+    from handwriter.drawing.pipeline import make_all_files
+    from handwriter.settings import Settings
+    s = Settings()
+    mk = s.drawing.marked
+    mk.enabled, mk.tl_x, mk.tl_y, mk.tr_x, mk.tr_y = True, -100, 197, 110, 197
+    c = compose_drawing(s)
+    assert c.errors == [] and [p.rotation for p in c.parts] == [0, 180]
+    for f in make_all_files(c):
+        ys = [float(m) for m in re.findall(r"^G[01] .*Y(-?[\d.]+)", f["gcode"], re.M)]
+        assert min(ys) >= 0 and f["gcode"].rstrip().splitlines()[-2].startswith("G0 X0.00 Y0.00")

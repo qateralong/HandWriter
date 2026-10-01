@@ -111,9 +111,22 @@
       <label class="f">Тема интерфейса<select id="prefTheme"><option value="auto">как в системе</option><option value="light">светлая</option><option value="dark">тёмная</option></select></label>
       <label class="f">Лист в предпросмотре<select id="prefPaper"><option value="white">белая бумага</option><option value="cream">кремовая бумага</option><option value="gray">серая бумага</option><option value="dark">тёмный лист, светлый карандаш</option></select></label>
     </div></nav>
-    <h1>Чертёж <span class="pill">проходы</span></h1>
-    <div class="hint">Иди по шагам сверху вниз: файл → лист и масштаб → стол → скачай файлы кнопкой внизу.</div>
+    <h1>Чертёж</h1>
+    <div class="hint">Иди по шагам сверху вниз: зона → файл → размещение → рамка → проверь и скачай файлы кнопкой внизу.</div>
 
+    <details class="step" open>
+      <summary>Рабочая зона на листе A4</summary>
+      <div class="body">
+        <div class="grid2">
+          <label class="f">X от, мм<input type="number" step="0.5" data-path="drawing.marked.x_min"></label>
+          <label class="f">X до, мм<input type="number" step="0.5" data-path="drawing.marked.x_max"></label>
+          <label class="f">Y от, мм<input type="number" step="0.5" data-path="drawing.marked.y_min"></label>
+          <label class="f">Y до, мм<input type="number" step="0.5" data-path="drawing.marked.y_max"></label>
+          <label class="f" style="display:none">Длина листа, мм<input type="number" step="1" min="1" data-path="drawing.marked.length"></label>
+        </div>
+        <div class="hint">Лист лежит на метках принтера. Зона — где карандаш пишет по этому листу, в координатах принтера; карандаш стартует в 0, 0 и возвращается туда. Если лист длиннее зоны, будет 2 захода: после первого лист поворачивается на 180° и кладётся на те же метки. Левое поле рамки — у дальнего края листа («Y до»).</div>
+      </div>
+    </details>
     <details class="step" open>
       <summary>Файл</summary>
       <div class="body">
@@ -159,9 +172,9 @@
       </div>
     </details>
     <details class="step" open>
-      <summary>Лист и масштаб</summary>
+      <summary>Размещение чертежа</summary>
       <div class="body">
-        <div class="grid2">
+        <div class="grid2" style="display:none">
           <label class="f">Формат
             <select data-path="drawing.sheet.format"><option value="A4">A4 (210×297)</option><option value="A3">A3 (297×420)</option><option value="custom">свой размер</option></select></label>
           <label class="f">Ориентация
@@ -170,15 +183,15 @@
           <label class="f custom">Высота, мм<input type="number" step="1" data-path="drawing.sheet.height"></label>
         </div>
         <div class="row" style="flex-direction:column;align-items:stretch;gap:0">
-          <label class="c"><input type="radio" name="scaleMode" value="fit"> Вписать в лист (по центру, пропорции сохраняются)</label>
-          <label class="c"><input type="radio" name="scaleMode" value="fit_reach"> Вписать в достижимую область (один проход)</label>
-          <label class="c"><input type="radio" name="scaleMode" value="fit_passes"> Подобрать масштаб под проходы</label>
+          <label class="c"><input type="radio" name="scaleMode" value="fit"> Вписать в лист (в рамку, если она включена)</label>
+          <label class="c" style="display:none"><input type="radio" name="scaleMode" value="fit_reach"> Вписать в достижимую область (один проход)</label>
+          <label class="c"><input type="radio" name="scaleMode" value="fit_passes"> Подобрать масштаб под заходы</label>
           <label class="c"><input type="radio" name="scaleMode" value="one_to_one"> 1:1 в единицах файла</label>
           <label class="c"><input type="radio" name="scaleMode" value="percent"> Задать:
             <input type="number" min="0.1" step="1" data-path="drawing.placement.percent" style="width:90px"> %</label>
         </div>
         <div class="grid2">
-          <label class="f wide">Где поставить
+          <label class="f wide" style="display:none">Где поставить
             <select data-path="drawing.placement.anchor"><option value="center">по центру поля листа</option><option value="zero">углом в точку нуля (под карандашом)</option></select></label>
           <label class="f">Поле для «вписать», мм<input type="number" min="0" step="1" data-path="drawing.placement.margin"></label>
           <span></span>
@@ -186,11 +199,11 @@
           <label class="f">Сдвиг dy, мм<input type="number" step="0.5" data-path="drawing.placement.dy"></label>
         </div>
         <div class="scaleinfo" id="scaleInfo"></div>
-        <button class="reach" id="btnReach" title="Масштаб, при котором чертёж целиком лежит в окне достижимости одного прохода (лучший допустимый поворот листа)">Вписать в достижимую область</button>
+        <button class="reach" id="btnReach" style="display:none" title="Масштаб, при котором чертёж целиком лежит в окне достижимости одного прохода (лучший допустимый поворот листа)">Вписать в достижимую область</button>
         <button class="reach" id="btnPasses" title="Крупнейший масштаб, при котором все линии чертежа достаются хотя бы в одном допустимом проходе">Подобрать масштаб под проходы</button>
       </div>
     </details>
-    <details class="step" open>
+    <details hidden>
       <summary>Стол и проходы</summary>
       <div class="body">
         <label class="c"><input type="checkbox" data-path="drawing.marked.enabled"> <b>Лист по меткам на принтере (A4, 2 захода)</b></label>
@@ -231,12 +244,31 @@
       </div>
     </details>
     <details class="step" open>
-      <summary>Проходы и файлы</summary>
+      <summary>Рамка по ГОСТ 2.104</summary>
       <div class="body">
-        <label class="f">Рабочих областей<select data-path="drawing.split.areas">
+        <label class="c"><input type="checkbox" data-path="drawing.frame.enabled"> Рамка</label>
+        <div class="grid2">
+          <label class="f">Слева, мм<input type="number" step="0.5" min="0" data-path="drawing.frame.left"></label>
+          <label class="f">Справа, мм<input type="number" step="0.5" min="0" data-path="drawing.frame.right"></label>
+          <label class="f">Сверху, мм<input type="number" step="0.5" min="0" data-path="drawing.frame.top"></label>
+          <label class="f">Снизу, мм<input type="number" step="0.5" min="0" data-path="drawing.frame.bottom"></label>
+        </div>
+        <label class="c"><input type="checkbox" data-path="drawing.frame.title_block"> Основная надпись, форма 1 (только линии)</label>
+        <div class="grid2">
+          <label class="f">Ширина надписи, мм<input type="number" step="1" min="10" data-path="drawing.frame.tb_width"></label>
+          <label class="f">Высота надписи, мм<input type="number" step="1" min="5" data-path="drawing.frame.tb_height"></label>
+        </div>
+        <div class="row"><button id="btnFrameDefaults">По ГОСТ: 20/5/5/5, 185×55</button></div>
+        <div class="hint">Чертёж ставится над основной надписью или слева от неё (где крупнее). При изменении размера надписи её внутренние линии растягиваются пропорционально.</div>
+      </div>
+    </details>
+    <details class="step" open>
+      <summary>Проверка и файлы</summary>
+      <div class="body">
+        <label class="f" style="display:none">Рабочих областей<select data-path="drawing.split.areas">
           <option value="0">авто (сколько нужно)</option><option value="1">1</option><option value="2">2 (лист 0° и 180°)</option>
           <option value="3">3</option><option value="4">4 (все углы в упоры)</option></select></label>
-        <div class="hint">Лист больше рабочей зоны рисуется по частям: каждая область — отдельный файл, между ними лист поворачивают другим углом в упоры.</div>
+        <div class="hint" style="display:none">Лист больше рабочей зоны рисуется по частям: каждая область — отдельный файл, между ними лист поворачивают другим углом в упоры.</div>
         <div id="partCards"></div>
         <details style="margin:8px 0 0">
           <summary style="font-weight:500">Швы и крестики</summary>
@@ -256,25 +288,6 @@
       </div>
     </details>
     <div class="group">Дополнительные настройки</div>
-    <details>
-      <summary>Рамка по ГОСТ 2.104</summary>
-      <div class="body">
-        <label class="c"><input type="checkbox" data-path="drawing.frame.enabled"> Рамка</label>
-        <div class="grid2">
-          <label class="f">Слева, мм<input type="number" step="0.5" min="0" data-path="drawing.frame.left"></label>
-          <label class="f">Справа, мм<input type="number" step="0.5" min="0" data-path="drawing.frame.right"></label>
-          <label class="f">Сверху, мм<input type="number" step="0.5" min="0" data-path="drawing.frame.top"></label>
-          <label class="f">Снизу, мм<input type="number" step="0.5" min="0" data-path="drawing.frame.bottom"></label>
-        </div>
-        <label class="c"><input type="checkbox" data-path="drawing.frame.title_block"> Основная надпись, форма 1 (только линии)</label>
-        <div class="grid2">
-          <label class="f">Ширина надписи, мм<input type="number" step="1" min="10" data-path="drawing.frame.tb_width"></label>
-          <label class="f">Высота надписи, мм<input type="number" step="1" min="5" data-path="drawing.frame.tb_height"></label>
-        </div>
-        <div class="row"><button id="btnFrameDefaults">По ГОСТ: 20/5/5/5, 185×55</button></div>
-        <div class="hint">Чертёж ставится над основной надписью или слева от неё (где крупнее). При изменении размера надписи её внутренние линии растягиваются пропорционально.</div>
-      </div>
-    </details>
     <details>
       <summary>Толщина линий</summary>
       <div class="body">

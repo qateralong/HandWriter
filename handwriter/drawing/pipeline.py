@@ -115,10 +115,10 @@ class DrawingComposition:
         s.sheet.width, s.sheet.height = pass_dims(rotation, self.layout.width, self.layout.height)
         s.printer._use_work_area = True
         if self.marked:
-            W, H, m = self.layout.width, self.layout.height, s.printer.safety_margin
-            pts = [self.to_machine(q, rotation) for q in ((0, 0), (W, 0), (W, H), (0, H))]
-            s.printer.travel = Travel(x_min=min(min(p[0] for p in pts) - m, 0.0), x_max=max(max(p[0] for p in pts) + m, 0.0),
-                                      y_min=0.0, y_max=max(max(p[1] for p in pts) + m, 0.0))
+            mk = self.settings.drawing.marked
+            s.printer.safety_margin = 0.0
+            s.printer.travel = Travel(x_min=min(mk.x_min, 0.0), x_max=max(mk.x_max, 0.0),
+                                      y_min=min(mk.y_min, 0.0), y_max=max(mk.y_max, 0.0))
         return s
 
     def pass_settings(self) -> Settings:
@@ -220,9 +220,11 @@ def hatch_mask(mask, px: float, pl: Placement, step: float, direction: str) -> l
 
 
 def compose_drawing(s: Settings) -> DrawingComposition:
-    if s.drawing.marked.enabled and s.drawing.sheet.orientation != "landscape":
+    if s.drawing.marked.enabled:
         s = s.model_copy(deep=True)
-        s.drawing.sheet.orientation = "landscape"
+        mk, sh = s.drawing.marked, s.drawing.sheet
+        sh.format, sh.orientation = "custom", "landscape"
+        sh.width, sh.height = mk.length, max(mk.x_max - mk.x_min, 1.0)
     ds = s.drawing
     c = DrawingComposition(settings=s)
     tol = ds.paths.curve_tol
@@ -289,13 +291,8 @@ def compose_drawing(s: Settings) -> DrawingComposition:
     c.reach_measured = s.printer.travel is not None
     if ds.marked.enabled:
         mk = ds.marked
-        if ds.sheet.format != "A4":
-            c.errors.append("Лист по меткам пока работает только для A4")
-        if min(mk.tl_y, mk.tr_y) <= 0:
-            c.errors.append("Верхние углы листа должны быть выше линии нуля (Y больше 0)")
-        d = math.hypot(mk.tr_x - mk.tl_x, mk.tr_y - mk.tl_y)
-        if abs(d - W) > 3:
-            c.warnings.append(f"Между верхними углами {d:.1f} мм, а ширина листа {W:g} мм: проверь координаты углов")
+        if mk.x_max <= mk.x_min or mk.y_max <= mk.y_min:
+            c.errors.append("Рабочая зона: «до» должно быть больше «от» по X и по Y")
     e, w = check_printer(s2)
     c.errors += e
     c.warnings += w

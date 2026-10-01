@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import itertools
-import math
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -362,13 +361,9 @@ def marked_affine(mk, W: float, H: float, r: int) -> Affine:
 
 
 def _marked_base(mk, W: float, H: float, r: int) -> Affine:
-    ex, ey = mk.tr_x - mk.tl_x, mk.tr_y - mk.tl_y
-    n = math.hypot(ex, ey) or 1.0
-    ex, ey = ex / n, ey / n
-    nx, ny = ey, -ex
     if r == 180:
-        return (-ex, nx, -ey, ny, mk.tl_x + W * ex, mk.tl_y + W * ey)
-    return (ex, -nx, ey, -ny, mk.tl_x + H * nx, mk.tl_y + H * ny)
+        return (-1.0, 0.0, 0.0, -1.0, mk.x_min + W, mk.y_max)
+    return (1.0, 0.0, 0.0, 1.0, mk.x_min, mk.y_max - H)
 
 
 def apply_affine(m: Affine, p: Point) -> Point:
@@ -385,7 +380,7 @@ def marked_rects(mk, W: float, H: float) -> tuple[list[int], dict[int, Rect], li
     allowed, rects, notes = [], {}, []
     for r in (0, 180):
         m = marked_affine(mk, W, H, r)
-        A, B, C = m[2], m[3], m[5]
+        A, B, C = m[2], m[3], m[5] - mk.y_min
         if abs(B) >= abs(A):
             bounds = [(-C - A * u) / B for u in (0.0, W)]
             R = (0.0, max(0.0, max(bounds)), W, H) if B > 0 else (0.0, 0.0, W, min(H, min(bounds)))

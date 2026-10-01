@@ -480,9 +480,9 @@ def test_marked_sheet_two_runs_from_zero_line():
     from handwriter.settings import Settings
     s = Settings()
     mk = s.drawing.marked
-    mk.enabled, mk.tl_x, mk.tl_y, mk.tr_x, mk.tr_y = True, -100, 197, 110, 197
+    mk.enabled = True
     c = compose_drawing(s)
     assert c.errors == [] and [p.rotation for p in c.parts] == [0, 180]
     for f in make_all_files(c):
         ys = [float(m) for m in re.findall(r"^G[01] .*Y(-?[\d.]+)", f["gcode"], re.M)]
-        assert min(ys) >= 0 and f["gcode"].rstrip().splitlines()[-2].startswith("G0 X0.00 Y0.00")
+        assert 0 <= min(ys) and max(ys) <= mk.y_max and f["gcode"].rstrip().splitlines()[-2].startswith("G0 X0.00 Y0.00")

@@ -191,10 +191,11 @@ class DrawingSplit(_M):
 
 class MarkedSheet(_M):
     enabled: bool = False
-    tl_x: float = 0.0
-    tl_y: float = 200.0
-    tr_x: float = 210.0
-    tr_y: float = 200.0
+    x_min: float = 12.0
+    x_max: float = 209.0
+    y_min: float = 0.0
+    y_max: float = 189.0
+    length: float = Field(297.0, gt=0, le=2000)
 
 
 class DrawingSettings(_M):

@@ -3,4 +3,5 @@ pub mod ops;
 pub mod passes;
 pub mod place;
 pub mod sources;
+pub mod split;
 pub mod svg_import;

@@ -998,6 +998,58 @@ def plan_case() -> None:
     print(f"plan: {len(out['covered'])} coverage, {len(out['plans'])} plans")
 
 
+def split_geometry_case() -> None:
+    import random
+
+    import numpy as np
+
+    from handwriter.drawing import split
+
+    rng = random.Random(31)
+    cases = []
+    for _ in range(150):
+        strokes = []
+        for _ in range(rng.randint(0, 6)):
+            kind = rng.random()
+            if kind < 0.3:
+                cx, cy, r = rng.uniform(0, 200), rng.uniform(0, 200), rng.uniform(1, 40)
+                n = rng.randint(8, 40)
+                st = [(cx + r * np.cos(2 * np.pi * k / n), cy + r * np.sin(2 * np.pi * k / n)) for k in range(n)]
+                st.append(st[0])
+            elif kind < 0.4:
+                st = [(rng.uniform(0, 200), rng.uniform(0, 200))]
+            else:
+                st = [(rng.uniform(0, 200), rng.uniform(0, 200)) for _ in range(rng.randint(2, 6))]
+                if rng.random() < 0.2:
+                    st.insert(1, st[0])
+            strokes.append([(float(x), float(y)) for x, y in st])
+        geo = split.Geometry(strokes)
+        x0, y0 = rng.uniform(-20, 150), rng.uniform(-20, 150)
+        Q = (x0, y0, x0 + rng.uniform(0, 150), y0 + rng.uniform(0, 150))
+        rects = [(a, b, a + rng.uniform(0, 200), b + rng.uniform(0, 200))
+                 for a, b in ((rng.uniform(-20, 150), rng.uniform(-20, 150)) for _ in range(rng.randint(0, 3)))]
+        axis = rng.randint(0, 1)
+        lo, hi = Q[axis], Q[axis + 2]
+        cands = np.arange(lo, hi + 1e-9, rng.choice([0.25, 1.0, 7.5])) if hi > lo else np.array([lo])
+        ov = rng.choice([0.0, 0.5, 2.0])
+        P = np.array([(rng.uniform(-10, 210), rng.uniform(-10, 210)) for _ in range(4)])
+        A2, B2, idx = split.clip_segments(geo.A, geo.B, Q)
+        cases.append({
+            "strokes": strokes, "Q": Q, "rects": rects, "axis": axis, "cands": cands.tolist(), "ov": ov,
+            "P": P.tolist(),
+            "geo": {"A": geo.A.tolist(), "B": geo.B.tolist(), "seg_path": geo.seg_path.tolist(),
+                    "curved": geo.curved.tolist(), "seg_len": geo.seg_len.tolist(), "path_len": geo.path_len.tolist()},
+            "clip": [A2.tolist(), B2.tolist(), idx.tolist()],
+            "covered": geo.covered(Q, rects), "seam_cost": geo.seam_cost(Q, axis, cands, ov).tolist(),
+            "distance": [v if np.isfinite(v) else repr(v) for v in geo.distance_to(P).tolist()],
+        })
+    d = OUT / "split"
+    shutil.rmtree(d, ignore_errors=True)
+    d.mkdir(parents=True)
+    (d / "geometry.json").write_text(json.dumps(cases, allow_nan=False), encoding="utf-8")
+    print(f"split geometry: {len(cases)} cases")
+
+
 def main() -> None:
     os.environ["HANDWRITER_HOME"] = tempfile.mkdtemp(prefix="hw-golden-")
     OUT.mkdir(parents=True, exist_ok=True)
@@ -1008,6 +1060,7 @@ def main() -> None:
     drawing_import_case()
     placement_case()
     plan_case()
+    split_geometry_case()
     shutil.copy(TEST_FONTS / "BadScript-Regular.ttf", user_fonts_dir())
 
     save_case("text_default", text_settings(), text_run)

@@ -3,6 +3,7 @@ pub mod ops;
 pub mod passes;
 pub mod pipeline;
 pub mod place;
+pub mod raster_import;
 pub mod sources;
 pub mod split;
 pub mod svg_import;

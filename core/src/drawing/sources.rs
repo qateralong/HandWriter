@@ -55,6 +55,7 @@ pub fn load_drawing(spec: &str, imp: &DrawingImport, tol_mm: f64, drawings_dir: 
     };
     match kind {
         "svg" => import_svg(&data, &file_name, imp, tol_mm),
+        "raster" => crate::drawing::raster_import::import_raster(&data, &file_name, imp),
         _ => {
             let mut res = ImportResult::new(kind, &file_name);
             res.errors.push(format!("Импорт {kind} ещё не перенесён в версию 2.0"));

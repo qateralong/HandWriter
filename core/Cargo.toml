@@ -8,6 +8,8 @@ edition.workspace = true
 blake2 = "0.10"
 encoding_rs = "0.8.42"
 indexmap = { version = "2", features = ["serde"] }
+mozjpeg = "0.10.13"
+png = "0.18.1"
 regex = "1.13.1"
 roxmltree = "0.21.1"
 serde = { version = "1", features = ["derive"] }

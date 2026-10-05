@@ -185,8 +185,6 @@ struct Ctx<'a, 'input> {
     fills_small: usize,
 }
 
-pub type CenterlineFn = dyn Fn(&[Vec<Point>]) -> Vec<Vec<Point>>;
-
 fn units_key(u: Units) -> &'static str {
     match u {
         Units::Auto => "auto",
@@ -528,7 +526,7 @@ fn shape(el: Node, tag: &str, m: Matrix, st: &Style, ctx: &mut Ctx) {
         ctx.skipped_white += 1;
         return;
     }
-    if add_filled(&subpaths, &mut ctx.res, ctx.opts, "", true, None) {
+    if add_filled(&subpaths, &mut ctx.res, ctx.opts, "", true) {
         ctx.fills_small += 1;
     }
 }
@@ -544,7 +542,6 @@ pub fn add_filled(
     opts: &DrawingImport,
     layer: &str,
     outline_big: bool,
-    centerlines: Option<&CenterlineFn>,
 ) -> bool {
     let closed_sub: Vec<Vec<Point>> = subpaths
         .iter()
@@ -560,15 +557,13 @@ pub fn add_filled(
     if closed_sub.is_empty() {
         return false;
     }
-    if opts.fill_centerlines
-        && let Some(f) = centerlines
-    {
+    if opts.fill_centerlines {
         let xs = closed_sub.iter().flatten().map(|q| q.0);
         let ys = closed_sub.iter().flatten().map(|q| q.1);
         let (x0, x1) = (xs.clone().reduce(numeric::min).unwrap(), xs.reduce(numeric::max).unwrap());
         let (y0, y1) = (ys.clone().reduce(numeric::min).unwrap(), ys.reduce(numeric::max).unwrap());
         if numeric::min(x1 - x0, y1 - y0) <= opts.fill_centerline_max {
-            let lines = f(&closed_sub);
+            let lines = crate::skeleton::fill_centerlines(&closed_sub);
             if !lines.is_empty() {
                 for p in lines {
                     let closed = p.len() > 2 && p[0] == p[p.len() - 1];

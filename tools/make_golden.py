@@ -1269,6 +1269,217 @@ def calibration_case() -> None:
     print(f"calibration: {len(out)} cases")
 
 
+def skeleton_case() -> None:
+    import random
+
+    import numpy as np
+    from scipy import ndimage
+    from skimage.morphology import skeletonize
+
+    from handwriter.drawing import fills
+    from handwriter.glyphs import skeleton as sk
+    from handwriter.glyphs.outline_provider import _FontData
+
+    fd = _FontData(TEST_FONTS / "BadScript-Regular.ttf")
+    xh = fd.metrics.x_height
+    chars = "абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЖЗИЙКФШЩЫЮЯabcdefghijkpqxyzRSWQ0123456789@&%?!.,;«»"
+    names = []
+    for ch in chars:
+        n = fd.cmap.get(ord(ch))
+        if n and n not in names:
+            names.append(n)
+    variants = [sk.SkeletonParams(), sk.SkeletonParams(px_per_em=600.0, prune=0.2, extend=0.0, smooth=0.0,
+                                                       simplify=0.01, junction_merge=0.0),
+                sk.SkeletonParams(px_per_em=2400.0, prune=0.02, extend=2.0, smooth=0.1, simplify=0.001,
+                                  junction_merge=6.0)]
+    glyphs = []
+    for i, n in enumerate(names):
+        contours = fd.contours(n)
+        params = variants[i % 3] if i % 5 else variants[0]
+        r = sk.skeleton_strokes(contours, xh, params, want_raw=i < 15)
+        glyphs.append({"name": n, "want_raw": i < 15, "contours": contours, "x_height": xh, "params": params.__dict__,
+                       "key": params.key(),
+                       "strokes": r.strokes, "raw": r.raw, "closed": r.closed})
+    rng = random.Random(47)
+    prims = []
+    for i, n in enumerate(names[:25]):
+        contours = fd.contours(n)
+        pts = [p for c in contours for p in c]
+        if not pts:
+            continue
+        ppem = rng.choice([300.0, 700.0])
+        xmin, ymax = min(p[0] for p in pts), max(p[1] for p in pts)
+        w = int(np.ceil((max(p[0] for p in pts) - xmin) * ppem)) + 8
+        h = int(np.ceil((ymax - min(p[1] for p in pts)) * ppem)) + 8
+        px = [[((p[0] - xmin) * ppem + 4, (ymax - p[1]) * ppem + 4) for p in c] for c in contours]
+        mask = sk.rasterize(px, w, h)
+        skel = skeletonize(mask)
+        dt = ndimage.distance_transform_edt(mask)
+        prims.append({"contours_px": px, "w": w, "h": h, "mask": mask_rle(mask), "skel": mask_rle(skel),
+                      "dt_sum": float(dt.sum()), "dt_on": [float(v) for v in dt.ravel()[np.nonzero(mask.ravel())[0]]][:4000],
+                      "reference_px": fills.reference_px(mask)})
+    fill_cases = []
+    for _ in range(25):
+        cx, cy, r = rng.uniform(0, 50), rng.uniform(0, 50), rng.uniform(0.3, 4.0)
+        n = rng.randint(3, 30)
+        outer = [(cx + r * np.cos(2 * np.pi * k / n), cy + r * np.sin(2 * np.pi * k / n) * rng.choice([1.0, 0.4]))
+                 for k in range(n)]
+        outer = [(float(x), float(y)) for x, y in outer]
+        contours = [outer + [outer[0]]]
+        if rng.random() < 0.3:
+            inner = [(cx + 0.4 * r * np.cos(-2 * np.pi * k / 12), cy + 0.4 * r * np.sin(-2 * np.pi * k / 12)) for k in range(12)]
+            contours.append([(float(x), float(y)) for x, y in inner] + [(float(inner[0][0]), float(inner[0][1]))])
+        fill_cases.append({"contours": contours, "lines": fills.fill_centerlines(contours)})
+    d = OUT / "skeleton"
+    shutil.rmtree(d, ignore_errors=True)
+    d.mkdir(parents=True)
+    (d / "cases.json").write_text(json.dumps({"glyphs": glyphs, "prims": prims, "fills": fill_cases}, allow_nan=False),
+                                  encoding="utf-8")
+    print(f"skeleton: {len(glyphs)} glyphs, {len(prims)} primitive sets, {len(fill_cases)} fills")
+
+
+def raster_images() -> dict:
+    import random
+
+    from PIL import Image, ImageDraw
+
+    rng = random.Random(53)
+
+    def base(w, h, bg=255):
+        im = Image.new("L", (w, h), bg)
+        d = ImageDraw.Draw(im)
+        for _ in range(6):
+            x0, y0 = rng.randint(0, w - 1), rng.randint(0, h - 1)
+            x1, y1 = rng.randint(0, w - 1), rng.randint(0, h - 1)
+            d.line((x0, y0, x1, y1), fill=rng.randint(0, 90), width=rng.randint(2, 6))
+        d.ellipse((w // 4, h // 4, w // 2, h // 2), outline=20, width=4)
+        d.rectangle((3, 3, w - 4, h - 4), outline=0, width=3)
+        for _ in range(5):
+            x, y = rng.randint(0, w - 3), rng.randint(0, h - 3)
+            d.point((x, y), fill=0)
+        return im
+
+    out = {}
+
+    def save(name, im, **kw):
+        import io
+        b = io.BytesIO()
+        im.save(b, **kw)
+        out[name] = b.getvalue()
+
+    g = base(240, 180)
+    save("gray.png", g, format="PNG")
+    save("gray_dpi.png", g, format="PNG", dpi=(150, 150))
+    rgb = Image.merge("RGB", (g, g.point(lambda v: min(255, v + 30)), g.point(lambda v: v // 2 + 100)))
+    save("rgb.png", rgb, format="PNG")
+    rgba = rgb.convert("RGBA")
+    a = Image.new("L", g.size, 255)
+    ImageDraw.Draw(a).rectangle((0, 0, 120, 90), fill=0)
+    ImageDraw.Draw(a).rectangle((120, 90, 239, 179), fill=128)
+    rgba.putalpha(a)
+    save("rgba.png", rgba, format="PNG")
+    la = Image.merge("LA", (g, a))
+    save("la.png", la, format="PNG")
+    p_img = rgb.quantize(colors=16)
+    save("palette.png", p_img, format="PNG", transparency=bytes([255, 0] + [255] * 14))
+    save("palette_plain.png", rgb.quantize(colors=7), format="PNG")
+    save("bilevel.png", g.point(lambda v: 255 if v > 128 else 0).convert("1"), format="PNG")
+    g16 = g.point(lambda v: v).convert("I")
+    g16 = g16.point(lambda v: v * 3)
+    save("gray16.png", g16.convert("I;16"), format="PNG")
+    save("rgb.jpg", rgb, format="JPEG", quality=88, dpi=(200, 200))
+    save("gray.jpg", g, format="JPEG", quality=70)
+    exif = Image.Exif()
+    exif[0x0112] = 6
+    exif[0x011A] = 254.0
+    exif[0x0128] = 3
+    save("rotated_exif.jpg", rgb, format="JPEG", quality=90, exif=exif.tobytes())
+    exif2 = Image.Exif()
+    exif2[0x0112] = 3
+    save("rotated_noresunit.jpg", g, format="JPEG", quality=90, exif=exif2.tobytes())
+    exif3 = Image.Exif()
+    exif3[0x0112] = 8
+    save("rotated8.png", g, format="PNG", exif=exif3.tobytes())
+    big = base(3200, 900)
+    save("big.png", big, format="PNG")
+    noisy = Image.effect_noise((420, 300), 90).point(lambda v: 0 if v < 110 else 255)
+    save("noisy.png", noisy, format="PNG")
+    save("flat.png", Image.new("L", (40, 30), 77), format="PNG")
+    out["broken.png"] = b"\x89PNG\r\n\x1a\nbroken"
+    return out
+
+
+def mask_rle(m) -> list:
+    import numpy as np
+    flat = np.asarray(m, dtype=bool).ravel()
+    runs, cur, n = [], False, 0
+    for v in flat:
+        if v == cur:
+            n += 1
+        else:
+            runs.append(n)
+            cur, n = v, 1
+    runs.append(n)
+    return runs
+
+
+def raster_case() -> None:
+    from handwriter.drawing.pipeline import compose_drawing, make_all_files, preview_payload
+    from handwriter.drawing.raster_import import import_raster
+    from handwriter.pipeline import GenerationRefused
+    from handwriter.settings import DrawingImport
+
+    d = OUT / "raster"
+    shutil.rmtree(d, ignore_errors=True)
+    (d / "input").mkdir(parents=True)
+    images = raster_images()
+    cases = []
+    for name, data in images.items():
+        (d / "input" / name).write_bytes(data)
+        (user_drawings_dir() / name).write_bytes(data)
+        variants = [DrawingImport()]
+        if name in ("gray.png", "rgb.jpg"):
+            variants += [DrawingImport(threshold_auto=False, threshold=60, invert=False),
+                         DrawingImport(threshold_auto=False, threshold=200, invert=True, raster_dpi=96.0),
+                         DrawingImport(raster_mode="fill")]
+        for opts in variants:
+            r = import_raster(data, name, opts)
+            e = dump_import(r)
+            e["info"] = r.info
+            e["fill_px"] = r.fill_px
+            e["fill_mask"] = mask_rle(r.fill_mask) if r.fill_mask is not None else None
+            e["fill_bbox"] = r.fill_bbox()
+            cases.append({"file": name, "opts": opts.model_dump(mode="json"), "result": e})
+    drawings = []
+    for name, mode in (("gray.png", "centerlines"), ("rgb.jpg", "fill"), ("noisy.png", "centerlines"), ("big.png", "fill")):
+        s = Settings()
+        s.printer.travel = Travel(x_min=-2, x_max=300, y_min=-2, y_max=300)
+        s.drawing.file = name
+        s.drawing.imp.raster_mode = mode
+        s.drawing.imp.fill_dir = "auto" if name != "big.png" else "vertical"
+        s = Settings.model_validate(s.model_dump())
+        clear_cache()
+        c = compose_drawing(s)
+        entry = {"file": name, "settings": s.model_dump(mode="json"), "preview": preview_payload(c)}
+        try:
+            entry["files"] = [{"filename": f["filename"], "gcode": f["gcode"]} for f in make_all_files(c, True)]
+        except GenerationRefused as ex:
+            entry["refused"] = ex.errors
+        drawings.append(entry)
+    from handwriter.drawing.svg_import import import_svg
+    svg_fills = []
+    fill_svg = ('<svg xmlns="http://www.w3.org/2000/svg" width="60mm" height="40mm" viewBox="0 0 60 40">'
+                '<rect x="2" y="2" width="1.2" height="20" fill="black"/><circle cx="20" cy="20" r="3" fill="#222"/>'
+                '<path d="M30 5 L50 5 L50 7 L30 7 Z M30 10 L32 10 L32 30 L30 30 Z" fill="black"/>'
+                '<ellipse cx="45" cy="30" rx="12" ry="6" fill="black"/></svg>')
+    for mx in (2.5, 8.0, 100.0):
+        opts = DrawingImport(fill_centerlines=True, fill_centerline_max=mx)
+        svg_fills.append({"svg": fill_svg, "max": mx, "result": dump_import(import_svg(fill_svg.encode(), "f.svg", opts, 0.05))})
+    (d / "cases.json").write_text(json.dumps({"imports": cases, "drawings": drawings, "svg_fills": svg_fills}, ensure_ascii=False,
+                                             allow_nan=False), encoding="utf-8")
+    print(f"raster: {len(cases)} imports, {len(drawings)} drawings")
+
+
 def main() -> None:
     os.environ["HANDWRITER_HOME"] = tempfile.mkdtemp(prefix="hw-golden-")
     OUT.mkdir(parents=True, exist_ok=True)
@@ -1283,6 +1494,8 @@ def main() -> None:
     split_case()
     drawing_pipeline_case()
     calibration_case()
+    skeleton_case()
+    raster_case()
     shutil.copy(TEST_FONTS / "BadScript-Regular.ttf", user_fonts_dir())
 
     save_case("text_default", text_settings(), text_run)

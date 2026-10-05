@@ -1,0 +1,252 @@
+{
+ "version": 1,
+ "font": "builtin:hershey_cyrillic.svg",
+ "mode": "strokes",
+ "text": "\tСъешь же ещё этих мягких французских булок, да выпей чаю. Широкая электрификация южных губерний даст мощный толчок подъёму сельского хозяйства.\n\n\tВторой абзац после пропущенной строки.",
+ "active_profile": "Тетрадь в клетку",
+ "sheet": {
+  "width": 165.0,
+  "height": 205.0,
+  "margin_left": 20.0,
+  "margin_right": 8.0,
+  "first_line_top": 15.0,
+  "bottom_limit": 10.0,
+  "line_pitch": 10.0,
+  "indent": 10.0,
+  "ruling": "grid",
+  "grid_step": 5.0
+ },
+ "typography": {
+  "size_mm": 3.0,
+  "baseline_shift": 0.0,
+  "dx": 0.0,
+  "dy": 0.0,
+  "rotation_deg": 0.0,
+  "hyphenate": true
+ },
+ "text_options": {
+  "replacements": [
+   [
+    "«",
+    "\""
+   ],
+   [
+    "»",
+    "\""
+   ],
+   [
+    "„",
+    "\""
+   ],
+   [
+    "“",
+    "\""
+   ],
+   [
+    "”",
+    "\""
+   ],
+   [
+    "—",
+    "-"
+   ],
+   [
+    "–",
+    "-"
+   ],
+   [
+    "…",
+    "..."
+   ],
+   [
+    " ",
+    " "
+   ]
+  ],
+  "missing": {},
+  "start_word": 1,
+  "resume_word": 0,
+  "resume_letter": 1
+ },
+ "printer": {
+  "pen_up_z": 4.0,
+  "pen_down_z": -1.0,
+  "feed_draw": 1200.0,
+  "feed_travel": 3000.0,
+  "feed_z": 600.0,
+  "simplify_tol": 0.05,
+  "travel": null,
+  "work_w": 220.0,
+  "work_h": 220.0,
+  "safety_margin": 2.0,
+  "flip_x": false,
+  "flip_y": false,
+  "test_mark_offset": 5.0,
+  "table": {
+   "overhang_x": true,
+   "overhang_y": false,
+   "table_x": null,
+   "table_y": null,
+   "touch_s": 1.0,
+   "pause_s": 2.0,
+   "readings": {}
+  }
+ },
+ "outline": {
+  "px_per_em": 1500.0,
+  "prune": 0.08,
+  "extend": 1.0,
+  "smooth": 0.03,
+  "simplify": 0.004,
+  "junction_merge": 2.5
+ },
+ "randomness": {
+  "enabled": true,
+  "seed": 1,
+  "size": 3.0,
+  "slant": 2.0,
+  "offset": 0.3,
+  "letter_spacing": 5.0,
+  "word_spacing": 10.0,
+  "drift": 0.5,
+  "line_start": 1.0,
+  "right_edge": 1.5,
+  "jitter": 0.1,
+  "variants": true
+ },
+ "connections": {
+  "enabled": true,
+  "distance": 0.15
+ },
+ "preview": {
+  "show_travel": true,
+  "show_ruling": true
+ },
+ "profiles": {
+  "Тетрадь в клетку": {
+   "sheet": {
+    "width": 165.0,
+    "height": 205.0,
+    "margin_left": 20.0,
+    "margin_right": 8.0,
+    "first_line_top": 15.0,
+    "bottom_limit": 10.0,
+    "line_pitch": 10.0,
+    "indent": 10.0,
+    "ruling": "grid",
+    "grid_step": 5.0
+   },
+   "size_mm": 3.0,
+   "baseline_shift": 0.0
+  },
+  "Тетрадь в линейку": {
+   "sheet": {
+    "width": 165.0,
+    "height": 205.0,
+    "margin_left": 20.0,
+    "margin_right": 8.0,
+    "first_line_top": 16.0,
+    "bottom_limit": 10.0,
+    "line_pitch": 8.0,
+    "indent": 10.0,
+    "ruling": "lines",
+    "grid_step": 8.0
+   },
+   "size_mm": 2.5,
+   "baseline_shift": 0.3
+  },
+  "A4": {
+   "sheet": {
+    "width": 210.0,
+    "height": 297.0,
+    "margin_left": 25.0,
+    "margin_right": 15.0,
+    "first_line_top": 25.0,
+    "bottom_limit": 20.0,
+    "line_pitch": 9.0,
+    "indent": 12.5,
+    "ruling": "none",
+    "grid_step": 5.0
+   },
+   "size_mm": 3.0,
+   "baseline_shift": 0.0
+  }
+ },
+ "drawing": {
+  "file": "builtin:test",
+  "imp": {
+   "units": "auto",
+   "pdf_page": 1,
+   "threshold_auto": true,
+   "threshold": 128,
+   "invert": false,
+   "raster_dpi": 0.0,
+   "fill_centerlines": false,
+   "fill_centerline_max": 5.0,
+   "raster_mode": "centerlines",
+   "fill_step": 0.4,
+   "fill_dir": "auto"
+  },
+  "sheet": {
+   "format": "A4",
+   "width": 210.0,
+   "height": 297.0,
+   "orientation": "auto"
+  },
+  "placement": {
+   "scale_mode": "fit",
+   "percent": 100.0,
+   "margin": 10.0,
+   "dx": 0.0,
+   "dy": 0.0,
+   "anchor": "center"
+  },
+  "frame": {
+   "enabled": false,
+   "left": 20.0,
+   "right": 5.0,
+   "top": 5.0,
+   "bottom": 5.0,
+   "title_block": true,
+   "tb_width": 185.0,
+   "tb_height": 55.0
+  },
+  "weights": {
+   "enabled": false,
+   "threshold": 0.4,
+   "passes": 3,
+   "step": 0.15,
+   "layers": {}
+  },
+  "paths": {
+   "curve_tol": 0.05,
+   "join_tol": 0.05,
+   "long_path": 30.0
+  },
+  "split": {
+   "overlap": 0.5,
+   "slack": 1.0,
+   "marks": false,
+   "mark_size": 3.0,
+   "mark_count": 3,
+   "offsets": {},
+   "areas": 0
+  },
+  "marked": {
+   "enabled": true,
+   "x_min": 12.0,
+   "x_max": 209.0,
+   "y_min": 0.0,
+   "y_max": 189.0,
+   "length": 297.0
+  },
+  "a3": {
+   "enabled": false,
+   "x_min": 0.0,
+   "x_max": 239.0,
+   "y_min": 0.0,
+   "y_max": 190.0
+  },
+  "show_travel": true
+ }
+}

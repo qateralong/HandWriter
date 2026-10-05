@@ -27,6 +27,7 @@ credentials*
 *.log
 selftest.txt
 *.gcode
+!tests/golden/**/*.gcode
 
 .venv/
 venv/
@@ -39,6 +40,7 @@ htmlcov/
 
 build/
 dist/
+/target/
 
 .vscode/
 .idea/

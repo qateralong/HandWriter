@@ -290,11 +290,220 @@ def conformance_case() -> None:
     print(f"conformance.json: {len(data['constraints'])} constraint cases, {len(data['checks'])} check cases")
 
 
+FONT_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"{attrs}>{body}</svg>'
+
+FOLDER_FONTS = {
+    "hand": {
+        "а.svg": ('<path d="M10 80 L10 30"/>', ""),
+        "а.2.svg": ('<path d="M20 80 L20 30"/>', ""),
+        "а.3.svg": ('<polyline points="30,80 30,30"/>', ""),
+        "uni0410.svg": ('<path d="M0 80 L40 10 L80 80"/>', ' data-advance="85"'),
+        "period.svg": ('<circle cx="5" cy="78" r="2"/>', ""),
+        "font.json": '{"x_height": 50}',
+    },
+    "mixed": {
+        "т.svg": ('<g transform="translate(10 0)"><path d="M0 30 L60 30 M30 30 L30 80"/></g>', ""),
+        "с.svg": ('<path d="M70 40 C50 20 10 30 10 60 C10 90 60 90 70 70"/>', ""),
+        "x.alt.svg": ('<path d="M0 0 L50 50 M50 0 L0 50" style="display: none"/><line x1="1" y1="2" x2="3" y2="4"/>', ""),
+        "x.svg": ('<ellipse cx="50" cy="50" rx="20" ry="10" transform="rotate(30 50 50) skewX(10)"/>', ""),
+        "U+0444.svg": ('<rect x="10" y="20" width="30" height="40"/><polygon points="1,1 5,1 5,5"/>', ' horiz-adv-x="70"'),
+        "uni1F600.svg": ('<path d="M10 10 Q50 0 90 10 T90 90 S10 90 10 50 A40 30 15 1 0 60 60 z m5 5 h10 v10 Z l3 3"/>', ""),
+        "space.svg": ("", ' width="30" height="100"'),
+        "z.svg": ('<path d="M0 0 L1 1"/>', None),
+        "?.svg": ('<path d="M0 0 L1 1"/>', ""),
+        "font.json": '{"name": "Mixed", "units_per_em": "200", "baseline": 90, "cap_height": 140, "descent": 30}',
+    },
+}
+
+SVG_FONTS = {
+    "mini.svg": """<svg xmlns="http://www.w3.org/2000/svg"><defs>
+      <font id="Mini" horiz-adv-x="500">
+        <font-face font-family="Mini" units-per-em="1000" x-height="400"/>
+        <glyph unicode="б" glyph-name="be" d="M0 0 L0 700"/>
+        <glyph glyph-name="be.2" d="M10 0 L10 700"/>
+        <glyph unicode="б" glyph-name="be.3" d="M20 0 L20 700"/>
+        <glyph unicode="ff" glyph-name="f_f" d="M0 0 L1 1"/>
+        <glyph unicode=" " horiz-adv-x="300"/>
+      </font></defs></svg>""",
+    "odd.svg": """<svg xmlns="http://www.w3.org/2000/svg"><font horiz-adv-x="0">
+        <font-face units-per-em="0" ascent="800" descent="200"/>
+        <glyph unicode="е" d="M100 100 C 200 300 400 -50 500 200" transform="translate(10) scale(1 -1)"/>
+        <glyph unicode="е" d="M0 0 L5 5"/>
+        <glyph unicode="е" glyph-name="" d="M0 0 L6 6"/>
+        <glyph unicode="Н" horiz-adv-x="650"><g transform="matrix(1 0 0 1 5 5)"><circle cx="300" cy="300" r="250"/></g></glyph>
+        <glyph glyph-name="uni0435.alt" d="M1 1 L2 2"/>
+        <glyph glyph-name="orphan" d="M1 1 L2 2"/>
+        <glyph unicode="" d="M1 1 L2 2"/>
+        <glyph unicode="e&#769;" d="M1 1 L2 2"/>
+        <glyph unicode="й" d="M10 10 L20 20 Z Z"/>
+      </font></svg>""",
+    "notfont.svg": '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0 L1 1"/></svg>',
+}
+
+PATHS = [
+    "M10 80 L10 30", "M0,0 L10,0 L10,10 Z", "m10 10 l5 5 l-5 5 z m20 0 l1 1",
+    "M0 0 H10 V10 h-5 v-5 Z", "M0 0 10 10 20 0", "m5 5 10 10 20 0",
+    "M70 40 C50 20 10 30 10 60 C10 90 60 90 70 70", "M0 0 c10 0 10 10 20 10 s10 -10 20 -10 S50 10 60 0",
+    "M0 0 Q5 10 10 0 T20 0 t10 0 T40 5", "M0 0 S10 10 20 0", "M0 0 T10 10",
+    "M0,0 A10,10 0 0,1 20,0", "M0 0 a10 10 0 1 0 20 0", "M0 0 A10 5 30 1 1 15 15",
+    "M0 0 A0 5 0 0 1 10 0", "M5 5 A10 10 0 0 1 5 5", "M0 0 A1 1 0 0 1 50 0",
+    "M60 40 A15 15 0 0 1 90 40", "M0 0 a1,1 0 00.5.5", "M0 0 A10 10 0 1110 10",
+    "M-5.5e-1,.5L1e2-3.25", "M.5.5.5.5", "M0 0 L 10 10 Z L 5 5", "M0 0 Z Z", "M0 0 L1 1 Z M3 3 L4 4",
+    "M1 1 L2 2 L1 1 Z", "M0 0 C1 1 2 2", "L1 1", "", "M0 0 A1 1 0 2 1 5 5", "M0 0 X 5 5",
+    "M 10 10 q 5 -5 10 0 q 5 5 10 0 Z", "M0 0 c 5 0 5 5 0 5 z c 1 1 2 2 3 3",
+    "M100 100 C 200 300 400 -50 500 200", "M0 0 L10 10 m5 5 L0 0 z",
+]
+
+TRANSFORMS = [
+    "", "translate(10,5) scale(2) rotate(90)", "translate(10)", "scale(2 3)", "rotate(45 10 10)",
+    "skewX(30)", "skewY(-15)", "matrix(1 2 3 4 5 6)", "matrix(1 2 3)", "rotate(-90) translate(1e1, -2.5e-1)",
+    "translate( 1 , 2 )scale(.5)", "unknown(1) scale(-1,1)", "rotate(180)", "rotate(30.5 -2 7)",
+]
+
+SVG_DOCS = {
+    "simple": SVG_SIMPLE,
+    "nested": """<svg xmlns="http://www.w3.org/2000/svg" xmlns:x="http://example.com/x">
+      <g transform="translate(5 5)" display="none"><line x1="0" y1="0" x2="1" y2="1"/></g>
+      <g transform="scale(2)" style="stroke: black; display : none ;"><line x1="0" y1="0" x2="1" y2="1"/></g>
+      <g transform="rotate(10)"><x:path d="M0 0 L1 1"/><path d="M1 1 L 2 2"/>
+        <defs><path d="M9 9 L8 8"/></defs><title>t</title>
+        <polygon points="0,0 10,0 10,10 0,0"/><polyline points="1 2 3"/><polygon points=""/>
+        <rect width="10" height="5"/><circle r="3"/><ellipse rx="4" ry="2" cx="1"/><text>x</text>
+        <!-- comment --><g><g transform="translate(1 1) matrix(1 0 0 -1 0 0)"><path d="m0 0 h5"/></g></g>
+      </g></svg>""",
+}
+
+
+def rand_case() -> dict:
+    import random
+
+    from handwriter.rand import pick, rnd, urnd, vnoise
+
+    rng = random.Random(3)
+    out = {"rnd": [], "urnd": [], "pick": [], "vnoise": []}
+    channels = ["size", "slant", "voff", "ls", "ws", "lstart", "redge", "variant", "drift", "jx", "ч"]
+    for _ in range(300):
+        seed = rng.choice([0, 1, 2, 42, -7, 10**12, rng.randint(-10**6, 10**6)])
+        ch = rng.choice(channels)
+        keys = [rng.randint(-5, 500) for _ in range(rng.randint(0, 4))]
+        out["rnd"].append([seed, ch, keys, rnd(seed, ch, *keys)])
+        out["urnd"].append([seed, ch, keys, urnd(seed, ch, *keys)])
+        n = rng.randint(1, 7)
+        out["pick"].append([seed, ch, n, keys, pick(seed, ch, n, *keys)])
+        t = rng.choice([rng.uniform(-50, 50), float(rng.randint(-5, 5)), -0.0, 1e-9])
+        out["vnoise"].append([seed, ch, t, keys, vnoise(seed, ch, t, *keys)])
+    return out
+
+
+def py_error(e: Exception) -> list:
+    return [type(e).__name__, str(e)]
+
+
+def dump_font(p) -> dict:
+    glyphs = {}
+    for name in p._glyphs:
+        g = p.glyph(name)
+        glyphs[name] = {"strokes": [list(s) for s in g.strokes], "advance": g.advance}
+    info = p.info()
+    m = p.metrics
+    return {
+        "name": p.name, "glyph_count": info.glyph_count, "chars": info.chars, "variants": info.variants,
+        "notes": info.notes, "cmap": [[ch, names] for ch, names in p._cmap.items()], "glyph_order": list(p._glyphs),
+        "metrics": {"x_height": m.x_height, "cap_height": m.cap_height, "ascent": m.ascent, "descent": m.descent,
+                    "x_height_source": m.x_height_source},
+        "space_advance": p.space_advance(), "glyphs": glyphs,
+    }
+
+
+def svg_fonts_case() -> None:
+    import random
+    import xml.etree.ElementTree as ET
+
+    from handwriter.glyphs import StrokeGlyphProvider
+    from handwriter.glyphs.svgparse import parse_transform, parse_viewbox, path_d_to_strokes, walk_strokes
+    from handwriter.paths import BUILTIN_FONTS_DIR
+
+    d = OUT / "svg_fonts"
+    shutil.rmtree(d, ignore_errors=True)
+    inp = d / "input"
+    inp.mkdir(parents=True)
+    for folder, files in FOLDER_FONTS.items():
+        (inp / folder).mkdir()
+        for fname, spec in files.items():
+            if isinstance(spec, str):
+                text = spec
+            else:
+                body, attrs = spec
+                text = FONT_SVG.format(attrs=attrs or "", body=body)
+                if attrs is None:
+                    text = text.replace(' viewBox="0 0 100 100"', "")
+            (inp / folder / fname).write_text(text, encoding="utf-8")
+    (inp / "empty").mkdir()
+    for fname, text in SVG_FONTS.items():
+        (inp / fname).write_text(text, encoding="utf-8")
+    (inp / "font.txt").write_text("x", encoding="utf-8")
+
+    fonts = []
+    targets = [("builtin", BUILTIN_FONTS_DIR / "hershey_cyrillic.svg")]
+    targets += [(f"input/{n}", inp / n) for n in [*FOLDER_FONTS, "empty", *SVG_FONTS, "font.txt"]]
+    for label, path in targets:
+        try:
+            fonts.append({"font": label, "result": dump_font(StrokeGlyphProvider.from_path(path))})
+        except Exception as e:
+            kind, msg = py_error(e)
+            fonts.append({"font": label, "error": [kind, msg.replace(str(inp), "<input>")]})
+
+    rng = random.Random(5)
+    paths = []
+    matrices = [(1.0, 0.0, 0.0, 1.0, 0.0, 0.0), (0.001, 0.0, 0.0, -0.001, 0.0, 0.8), (2.0, 0.5, -0.3, 1.5, 7.0, -3.0)]
+    for dd in PATHS:
+        for m in matrices:
+            for tol in (0.001, 0.5):
+                try:
+                    paths.append([dd, m, tol, path_d_to_strokes(dd, m, tol)])
+                except Exception as e:
+                    paths.append([dd, m, tol, py_error(e)])
+    cmds = "MmLlHhVvCcSsQqTtAaZz"
+    argc = {"M": 2, "L": 2, "H": 1, "V": 1, "C": 6, "S": 4, "Q": 4, "T": 2, "A": 7, "Z": 0}
+    for _ in range(300):
+        parts = [rng.choice(["M", "m"]) + f" {rng.uniform(-50, 50):.3f} {rng.uniform(-50, 50):.3f}"]
+        for _ in range(rng.randint(1, 8)):
+            c = rng.choice(cmds)
+            n = argc[c.upper()]
+            args = []
+            for k in range(n * rng.choice([1, 1, 2])):
+                if c.upper() == "A" and k % 7 in (3, 4):
+                    args.append(str(rng.randint(0, 1)))
+                elif c.upper() == "A" and k % 7 in (0, 1):
+                    args.append(f"{rng.choice([0, rng.uniform(0.1, 60)]):g}")
+                else:
+                    args.append(f"{rng.uniform(-60, 60):.{rng.randint(0, 4)}f}")
+            parts.append(c + rng.choice([" ", ""]) + rng.choice([" ", ","]).join(args))
+        dd = rng.choice([" ", "", "\n"]).join(parts)
+        m = rng.choice(matrices)
+        try:
+            paths.append([dd, m, 0.01, path_d_to_strokes(dd, m, 0.01)])
+        except Exception as e:
+            paths.append([dd, m, 0.01, py_error(e)])
+
+    transforms = [[s, list(parse_transform(s))] for s in TRANSFORMS]
+    docs = []
+    for name, text in SVG_DOCS.items():
+        root = ET.fromstring(text)
+        docs.append({"name": name, "svg": text, "viewbox": parse_viewbox(root),
+                     "strokes": walk_strokes(root, (1.0, 0.0, 0.0, -1.0, 0.0, 100.0), 0.01)})
+
+    data = {"fonts": fonts, "paths": paths, "transforms": transforms, "documents": docs, "rand": rand_case()}
+    (d / "cases.json").write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    print(f"svg_fonts: {len(fonts)} fonts, {len(paths)} paths")
+
+
 def main() -> None:
     os.environ["HANDWRITER_HOME"] = tempfile.mkdtemp(prefix="hw-golden-")
     OUT.mkdir(parents=True, exist_ok=True)
     numeric_case()
     conformance_case()
+    svg_fonts_case()
     shutil.copy(TEST_FONTS / "BadScript-Regular.ttf", user_fonts_dir())
 
     save_case("text_default", text_settings(), text_run)

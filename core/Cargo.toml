@@ -5,6 +5,11 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+blake2 = "0.10"
+encoding_rs = "0.8.42"
 indexmap = { version = "2", features = ["serde"] }
+regex = "1.13.1"
+roxmltree = "0.21.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
+unicode-normalization = "0.1.25"

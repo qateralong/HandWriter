@@ -1,5 +1,10 @@
 pub mod checks;
 pub mod gcode;
 pub mod geometry;
+pub mod glyphs;
 pub mod numeric;
+pub mod rand;
 pub mod settings;
+pub mod svgparse;
+pub mod svgpath;
+pub mod xml;

@@ -1235,6 +1235,40 @@ def drawing_pipeline_case() -> None:
     print(f"drawing_pipeline: {len(cases)} cases, {sum('files' in c for c in cases)} with gcode")
 
 
+def calibration_case() -> None:
+    import random
+
+    from handwriter.calibration import check_errors, make_reach_check_gcode, make_zero_gcode, reach_corners
+    from handwriter.pipeline import GenerationRefused
+
+    rng = random.Random(43)
+    out = []
+    for i in range(80):
+        s = Settings()
+        pr = s.printer
+        if i % 7:
+            pr.travel = Travel(x_min=rng.uniform(-10, 5), x_max=rng.uniform(0, 250),
+                               y_min=rng.uniform(-10, 5), y_max=rng.uniform(0, 250))
+        pr.safety_margin = rng.choice([0.0, 2.0, 7.5, 60.0])
+        pr.table.touch_s, pr.table.pause_s = rng.choice([1.0, 0.25, 2.5]), rng.choice([2.0, 0.5, 0.0005])
+        pr.table.overhang_x, pr.table.overhang_y = rng.random() < 0.5, rng.random() < 0.5
+        pr.pen_up_z = rng.choice([4.0, 1.5, -2.0])
+        pr.feed_z = rng.choice([600.0, 0.0, 450.5])
+        s = Settings.model_validate(s.model_dump())
+        e = {"settings": s.model_dump(mode="json")}
+        errors, warnings = check_errors(s)
+        e["info"] = {"errors": errors, "warnings": warnings,
+                     "corners": reach_corners(s) if s.printer.travel is not None and not errors else []}
+        for key, fn in (("check", make_reach_check_gcode), ("zero", make_zero_gcode)):
+            try:
+                e[key] = fn(s)
+            except GenerationRefused as ex:
+                e[key + "_refused"] = ex.errors
+        out.append(e)
+    (OUT / "calibration.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
+    print(f"calibration: {len(out)} cases")
+
+
 def main() -> None:
     os.environ["HANDWRITER_HOME"] = tempfile.mkdtemp(prefix="hw-golden-")
     OUT.mkdir(parents=True, exist_ok=True)
@@ -1248,6 +1282,7 @@ def main() -> None:
     split_geometry_case()
     split_case()
     drawing_pipeline_case()
+    calibration_case()
     shutil.copy(TEST_FONTS / "BadScript-Regular.ttf", user_fonts_dir())
 
     save_case("text_default", text_settings(), text_run)

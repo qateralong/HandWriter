@@ -1,3 +1,4 @@
+pub mod calibration;
 pub mod checks;
 pub mod drawing;
 pub mod gcode;

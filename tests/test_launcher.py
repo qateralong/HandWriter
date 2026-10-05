@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 import time
 import urllib.request
@@ -131,6 +132,18 @@ def test_user_data_in_appdata(monkeypatch, tmp_path):
     assert paths.settings_path() == tmp_path / "Roaming" / "HandWriter" / "settings.json"
     assert paths.log_path() == tmp_path / "Roaming" / "HandWriter" / "logs" / "handwriter.log"
     assert paths.local_dir() == tmp_path / "Local" / "HandWriter"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="XDG base dirs are used outside Windows")
+def test_user_data_in_xdg_dirs(monkeypatch, tmp_path):
+    from handwriter import paths
+    for var in ("HANDWRITER_HOME", "APPDATA", "LOCALAPPDATA"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "share"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    assert paths.settings_path() == tmp_path / "share" / "HandWriter" / "settings.json"
+    assert paths.log_path() == tmp_path / "share" / "HandWriter" / "logs" / "handwriter.log"
+    assert paths.local_dir() == tmp_path / "cache" / "HandWriter"
 
 
 def test_selftest_passes_from_source(tmp_path):

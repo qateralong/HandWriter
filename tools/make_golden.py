@@ -810,6 +810,104 @@ def drawing_import_case() -> None:
     print(f"drawing_import: {len(imports)} imports")
 
 
+def placement_case() -> None:
+    import random
+
+    from handwriter.drawing import passes, place
+
+    rng = random.Random(23)
+    layouts, places, labels = [], [], []
+
+    def rect(lo=-20.0, hi=300.0):
+        x0, y0 = rng.uniform(lo, hi), rng.uniform(lo, hi)
+        return (x0, y0, x0 + rng.choice([0.0, 1e-10, rng.uniform(0, 250)]), y0 + rng.choice([0.0, rng.uniform(0, 250)]))
+
+    for _ in range(400):
+        s = Settings()
+        ds = s.drawing
+        ds.sheet.format = rng.choice(["A4", "A3", "custom"])
+        ds.sheet.width, ds.sheet.height = rng.choice([210.0, 150.0, 400.0]), rng.choice([297.0, 150.0, 100.0])
+        ds.sheet.orientation = rng.choice(["auto", "portrait", "landscape"])
+        ds.frame.enabled = rng.random() < 0.5
+        ds.frame.title_block = rng.random() < 0.7
+        ds.frame.left, ds.frame.bottom = rng.choice([20.0, 5.0, 0.0]), rng.choice([5.0, 12.5])
+        ds.frame.tb_width, ds.frame.tb_height = rng.choice([185.0, 400.0, 100.0]), rng.choice([55.0, 200.0, 30.0])
+        ds.placement.margin = rng.choice([10.0, 0.0, 33.3])
+        ds.placement.scale_mode = rng.choice(["fit", "fit_reach", "fit_passes", "one_to_one", "percent"])
+        ds.placement.percent = rng.choice([100.0, 50.0, 233.33, 12.5])
+        ds.placement.anchor = rng.choice(["center", "zero"])
+        ds.placement.dx, ds.placement.dy = rng.choice([0.0, 3.5]), rng.choice([0.0, -2.25])
+        ds.marked.enabled = rng.random() < 0.2
+        ds.a3.enabled = not ds.marked.enabled and rng.random() < 0.2
+        s = Settings.model_validate(s.model_dump())
+        ds = s.drawing
+        bbox = rng.choice([None, rect(), (0.0, 0.0, 100.0, 60.0), (5.0, 5.0, 5.0, 5.0), (-50.0, 10.0, 350.0, 20.0)])
+        lay = place.sheet_layout(ds, bbox)
+        layouts.append({"settings": s.model_dump(mode="json"), "bbox": bbox,
+                        "layout": {"width": lay.width, "height": lay.height, "orientation": lay.orientation,
+                                   "frame": [[fl.points, fl.thick] for fl in lay.frame], "inner": lay.inner,
+                                   "title_block": lay.title_block, "areas": lay.areas}})
+        if bbox is not None:
+            reach = [rect(-10.0, 200.0) for _ in range(rng.randint(0, 3))]
+            pad = rng.choice([0.0, 0.5, 2.0])
+            pl = place.place(ds, bbox, lay, reach, pad)
+            places.append({"index": len(layouts) - 1, "reach": reach, "pad": pad,
+                           "placement": {"scale": pl.scale, "tx": pl.tx, "ty": pl.ty, "area": pl.area,
+                                         "errors": pl.errors, "warnings": pl.warnings,
+                                         "applied": pl.apply((12.5, -3.0))}})
+    for v in [0.0, -1.0, 1.0, 1.0 + 1e-10, 0.5, 0.25, 0.2, 1 / 3, 2.0, 2.5, 10.0, 0.004, 1.004, 3.14159, 0.9999,
+              199.996, 0.333333, 7.505, 0.00001]:
+        labels.append([v, place.scale_label(v)])
+
+    pas = {"maps": [], "tables": [], "uncovered": []}
+    for _ in range(200):
+        W, H = rng.choice([210.0, 297.0, 420.0, 123.4]), rng.choice([297.0, 210.0, 77.7])
+        r = rng.choice(passes.ROTATIONS)
+        pt = (rng.uniform(-10, 450), rng.uniform(-10, 450))
+        R = rect(-10.0, 300.0)
+        pas["maps"].append([W, H, r, pt, passes.to_pass(pt, r, W, H), passes.from_pass(pt, r, W, H),
+                            passes.corner_point(r, W, H), list(passes.pass_dims(r, W, H)), R,
+                            passes.rect_from_pass(R, r, W, H)])
+    for _ in range(200):
+        s = Settings()
+        pr = s.printer
+        if rng.random() < 0.8:
+            pr.travel = Travel(x_min=rng.uniform(-30, 0), x_max=rng.uniform(100, 320),
+                               y_min=rng.uniform(-30, 0), y_max=rng.uniform(100, 320))
+        pr.flip_x, pr.flip_y = rng.random() < 0.3, rng.random() < 0.3
+        pr.safety_margin = rng.choice([0.0, 2.0, 7.5])
+        pr.work_w, pr.work_h = rng.choice([220.0, 255.5]), rng.choice([220.0, 180.0])
+        pr.table.overhang_x, pr.table.overhang_y = rng.random() < 0.5, rng.random() < 0.5
+        if rng.random() < 0.6:
+            pr.table.table_x, pr.table.table_y = rng.uniform(150, 320), rng.uniform(150, 320)
+        s = Settings.model_validate(s.model_dump())
+        W, H = rng.choice([(210.0, 297.0), (297.0, 210.0), (297.0, 420.0), (420.0, 297.0), (100.0, 100.0)])
+        tb = passes.make_table(s.printer, W, H)
+        per_r = []
+        for r in passes.ROTATIONS:
+            per_r.append([r, list(passes.overhang(r, W, H, tb)), list(passes.rotation_allowed(r, W, H, tb)),
+                          passes.pass_rect(r, W, H, tb.safe)])
+        pas["tables"].append({"printer": s.model_dump(mode="json")["printer"], "W": W, "H": H,
+                              "table": tb.__dict__, "rotations": per_r})
+    for _ in range(200):
+        target = rect(0.0, 100.0)
+        rects = [rect(-20.0, 150.0) for _ in range(rng.randint(0, 5))]
+        if rng.random() < 0.3:
+            rects.append(target)
+        if rng.random() < 0.3 and rects:
+            q = rects[0]
+            rects.append((q[2], q[1], q[2] + 10.0, q[3]))
+        un = passes.uncovered(target, rects)
+        pas["uncovered"].append([target, rects, un, passes.area(un), passes.intersect(target, rects[0]) if rects else None])
+
+    d = OUT / "placement"
+    shutil.rmtree(d, ignore_errors=True)
+    d.mkdir(parents=True)
+    (d / "cases.json").write_text(json.dumps({"layouts": layouts, "places": places, "labels": labels,
+                                              "passes": pas}, ensure_ascii=False), encoding="utf-8")
+    print(f"placement: {len(layouts)} layouts, {len(places)} placements")
+
+
 def main() -> None:
     os.environ["HANDWRITER_HOME"] = tempfile.mkdtemp(prefix="hw-golden-")
     OUT.mkdir(parents=True, exist_ok=True)
@@ -818,6 +916,7 @@ def main() -> None:
     svg_fonts_case()
     text_case()
     drawing_import_case()
+    placement_case()
     shutil.copy(TEST_FONTS / "BadScript-Regular.ttf", user_fonts_dir())
 
     save_case("text_default", text_settings(), text_run)

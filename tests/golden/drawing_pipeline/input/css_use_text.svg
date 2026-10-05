@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="210mm" height="148mm"
+     viewBox="-5 -5 210 148">
+  <style><![CDATA[
+    /* comment { stroke: red } */
+    .thick { stroke: #000; stroke-width: 0.8 !important ; fill: none }
+    .thin, line { stroke: black; stroke-width: 0.2 }
+    #special { stroke-dasharray: 4, 1.5 ; stroke-dashoffset: 1 }
+    rect.bg { fill: WHITE; stroke: none }
+    * { visibility: visible }
+    .ghost { visibility: hidden }
+    bad selector here { stroke: red }
+  ]]></style>
+  <defs>
+    <symbol id="cross"><path class="thin" d="M-2 0 H2 M0 -2 V2"/></symbol>
+    <g id="mark"><circle class="thick" r="1.5"/></g>
+  </defs>
+  <rect class="bg" width="200" height="138"/>
+  <rect class="thick" x="1" y="1" width="198" height="136" rx="4"/>
+  <rect class="thick" x="10" y="10" width="20" height="10" ry="30"/>
+  <rect class="thick" x="40" y="10" width="0" height="10"/>
+  <line id="special" x1="10" y1="30" x2="190" y2="30"/>
+  <use xlink:href="#cross" x="50" y="50"/>
+  <use href="##mark" x="60" y="50" style="stroke-width: inherit"/>
+  <use href="#missing"/>
+  <g fill="none" stroke="black" stroke-width="0.35" transform="translate(0 60)">
+    <polyline points="0,0 10,5 20,0 30"/>
+    <polygon points="40,0 50,10 60,0"/>
+    <path d="M70 0 C 80 20 90 -20 100 0 S 120 20 130 0" stroke-dasharray="none"/>
+    <path d="M140 0 Q 150 20 160 0 T 180 0" stroke-dasharray="2 1 0.5" stroke-dashoffset="-3"/>
+    <path d="L 5 5 oops"/>
+    <path class="ghost" d="M0 0 L5 5"/>
+    <g display="none"><path d="M0 0 L9 9"/></g>
+    <g style="display:none"><path d="M0 0 L9 9"/></g>
+    <path d="M0 20 L10 20" stroke="#FFF"/>
+    <path d="M0 25 L10 25" stroke="rgb(255, 255, 255)"/>
+  </g>
+  <g transform="translate(0 80)">
+    <path d="M10 0 L20 0 L20 10 Z M30 0 L40 0 L40 10 L30 10"/>
+    <circle cx="60" cy="5" r="4" fill="#333"/>
+    <ellipse cx="80" cy="5" rx="6" ry="0" fill="black"/>
+    <line x1="0" y1="0" x2="5" y2="5" fill="black"/>
+    <path d="M90 0 L100 0" fill="none" stroke="none"/>
+    <path d="M110 0 L110 0 L110 0 Z" fill="black"/>
+    <rect x="120" y="0" width="10" height="10" fill="white"/>
+  </g>
+  <svg x="150" y="100" width="40" height="30" viewBox="0 0 10 10">
+    <rect width="10" height="10" fill="none" stroke="black" stroke-width="0.1"/>
+  </svg>
+  <text x="20" y="130" font-size="5">Основная <tspan x="40" y="131">надпись</tspan>  тест</text>
+  <text><tspan>   </tspan></text>
+  <text transform="rotate(90)"><tspan x="3" y="4">повёрнутый</tspan></text>
+  <flowRoot><flowPara>поток</flowPara></flowRoot>
+  <image x="5" y="5" width="10" height="10"/>
+  <switch><g><line x1="0" y1="0" x2="1" y2="1" stroke="black"/></g></switch>
+  <a><line x1="1" y1="0" x2="2" y2="1" stroke="black"/></a>
+  <foreignObject><line x1="1" y1="0" x2="2" y2="1" stroke="black"/></foreignObject>
+  <unknown><line x1="1" y1="0" x2="2" y2="1" stroke="black"/></unknown>
+</svg>

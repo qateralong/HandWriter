@@ -149,6 +149,13 @@ pub fn format_g(v: f64, prec: usize) -> String {
     }
 }
 
+pub fn round_to(v: f64, digits: usize) -> f64 {
+    if !v.is_finite() {
+        return v;
+    }
+    format!("{v:.digits$}").parse().expect("formatted float parses")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

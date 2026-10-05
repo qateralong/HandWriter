@@ -1136,6 +1136,105 @@ def split_case() -> None:
     print(f"split: {len(cases)} cases, {sum(1 for c in cases if c['root'])} solved")
 
 
+def drawing_pipeline_case() -> None:
+    import random
+
+    from handwriter.drawing.pipeline import (compose_drawing, gcode_filename, make_all_files, preview_payload)
+    from handwriter.pipeline import GenerationRefused
+
+    d = OUT / "drawing_pipeline"
+    shutil.rmtree(d, ignore_errors=True)
+    (d / "input").mkdir(parents=True)
+    files = {"simple.svg": SVG_SIMPLE, "css_use_text.svg": SVG_IMPORTS["css_use_text"],
+             "simple_cm.svg": SVG_IMPORTS["simple_cm"], "wide.svg": SVG_IMPORTS["wh_no_viewbox"],
+             "empty.svg": '<svg xmlns="http://www.w3.org/2000/svg" width="10mm" height="10mm"><text x="1" y="1">t</text>'
+                          '<image x="1" y="1"/></svg>',
+             "framed.svg": '<svg xmlns="http://www.w3.org/2000/svg" width="400mm" height="280mm" viewBox="0 0 400 280">'
+                           '<g fill="none" stroke="black" stroke-width="0.5"><rect x="0" y="0" width="400" height="280"/>'
+                           '<line x1="0" y1="200" x2="400" y2="200"/><circle cx="120" cy="100" r="40"/>'
+                           '<path d="M200 40 L380 40 L380 180" stroke-dasharray="0.1 0.1"/></g></svg>'}
+    for name, text in files.items():
+        (d / "input" / name).write_text(text, encoding="utf-8")
+        (user_drawings_dir() / name).write_text(text, encoding="utf-8")
+
+    rng = random.Random(41)
+    variants = []
+
+    def base():
+        s = Settings()
+        s.printer.travel = Travel(x_min=-2, x_max=300, y_min=-2, y_max=300)
+        return s
+
+    def v(name, s):
+        variants.append((name, Settings.model_validate(s.model_dump())))
+
+    s = base(); v("builtin_fit", s)
+    s = base(); s.drawing.frame.enabled = True; s.drawing.weights.enabled = True; s.drawing.placement.scale_mode = "fit_reach"; v("frame_weights_reach", s)
+    s = base(); s.drawing.file = "simple.svg"; s.drawing.placement.scale_mode = "one_to_one"; s.drawing.placement.anchor = "zero"; v("simple_1to1_zero", s)
+    s = base(); s.drawing.file = "simple.svg"; s.drawing.placement.scale_mode = "percent"; s.drawing.placement.percent = 450.0; v("simple_percent_big", s)
+    s = base(); s.drawing.file = "css_use_text.svg"; s.drawing.sheet.format = "A3"; v("css_a3", s)
+    s = base(); s.drawing.file = "css_use_text.svg"; s.printer.travel = Travel(x_min=-2, x_max=200, y_min=-2, y_max=215); v("css_small_reach", s)
+    s = base(); s.drawing.file = "css_use_text.svg"; s.printer.travel = Travel(x_min=-2, x_max=200, y_min=-2, y_max=215); s.drawing.placement.scale_mode = "fit_passes"; v("css_fit_passes", s)
+    s = base(); s.drawing.file = "simple_cm.svg"; s.drawing.split.marks = True; s.drawing.split.mark_count = 2; s.drawing.sheet.format = "A3"; s.printer.travel = Travel(x_min=-2, x_max=250, y_min=-2, y_max=250); v("cm_a3_marks", s)
+    s = base(); s.drawing.file = "simple_cm.svg"; s.drawing.sheet.format = "A3"; s.printer.travel = Travel(x_min=-2, x_max=250, y_min=-2, y_max=250); s.drawing.split.offsets = {"180": (0.4, -0.25)}; s.drawing.split.areas = 3; v("cm_a3_areas_offsets", s)
+    s = base(); s.drawing.file = "wide.svg"; s.drawing.sheet.format = "custom"; s.drawing.sheet.width = 150.0; s.drawing.sheet.height = 100.0; v("wide_custom", s)
+    s = base(); s.drawing.file = "empty.svg"; v("empty", s)
+    s = base(); s.drawing.file = "missing.svg"; v("missing_file", s)
+    s = base(); s.drawing.file = "framed.svg"; s.drawing.marked.enabled = True; v("framed_marked_fit_frame", s)
+    s = base(); s.drawing.file = "framed.svg"; s.drawing.a3.enabled = True; v("framed_a3_fit_frame", s)
+    s = base(); s.drawing.file = "framed.svg"; s.drawing.a3.enabled = True; s.drawing.frame.enabled = True; s.drawing.split.marks = True; v("framed_a3_frame_marks", s)
+    s = base(); s.drawing.marked.enabled = True; s.drawing.weights.enabled = True; v("marked_weights", s)
+    s = base(); s.drawing.marked.enabled = True; s.drawing.marked.x_max = 5.0; v("marked_bad_zone", s)
+    s = base(); s.printer.travel = None; v("unmeasured", s)
+    s = base(); s.printer.travel = Travel(x_min=-2, x_max=120, y_min=-2, y_max=120); s.drawing.placement.scale_mode = "one_to_one"; v("unreachable_1to1", s)
+    s = base(); s.printer.travel = Travel(x_min=-2, x_max=120, y_min=-2, y_max=120); s.drawing.frame.enabled = True; s.printer.table.overhang_x = False; v("unreachable_frame", s)
+    s = base(); s.printer.table.table_x, s.printer.table.table_y = 230.0, 230.0; s.printer.table.overhang_y = False; s.drawing.sheet.format = "A3"; v("table_a3", s)
+    s = base(); s.drawing.placement.anchor = "zero"; s.drawing.weights.enabled = True; s.drawing.split.areas = 2; v("zero_weights_areas", s)
+    s = base(); s.drawing.sheet.orientation = "portrait"; s.drawing.split.areas = 3; s.printer.travel = Travel(x_min=-3, x_max=200, y_min=-3, y_max=215); v("portrait_three_areas", s)
+    s = base(); s.drawing.file = "simple.svg"; s.drawing.placement.dx, s.drawing.placement.dy = 500.0, 0.0; v("off_sheet", s)
+    s = base(); s.drawing.file = "simple.svg"; s.drawing.paths.join_tol = 0.0; s.drawing.paths.long_path = 0.0; s.printer.simplify_tol = 0.5; v("no_join", s)
+    s = base(); s.printer.flip_x = True; s.printer.travel = Travel(x_min=-300, x_max=2, y_min=-2, y_max=300); v("flip_x", s)
+    for i in range(30):
+        s = base()
+        ds = s.drawing
+        ds.file = rng.choice(["builtin:test", "simple.svg", "css_use_text.svg", "simple_cm.svg", "framed.svg"])
+        ds.sheet.format = rng.choice(["A4", "A3", "custom"])
+        ds.sheet.width, ds.sheet.height = rng.choice([(150.0, 200.0), (300.0, 200.0)])
+        ds.sheet.orientation = rng.choice(["auto", "portrait", "landscape"])
+        ds.placement.scale_mode = rng.choice(["fit", "fit_reach", "fit_passes", "one_to_one", "percent"])
+        ds.placement.percent = rng.choice([50.0, 100.0, 150.0])
+        ds.placement.anchor = rng.choice(["center", "zero"])
+        ds.placement.margin = rng.choice([5.0, 10.0])
+        ds.frame.enabled = rng.random() < 0.4
+        ds.frame.title_block = rng.random() < 0.7
+        ds.weights.enabled = rng.random() < 0.4
+        ds.weights.threshold = rng.choice([0.3, 0.5])
+        ds.split.marks = rng.random() < 0.4
+        ds.split.slack = rng.choice([0.0, 1.0])
+        ds.marked.enabled = rng.random() < 0.15
+        ds.a3.enabled = not ds.marked.enabled and rng.random() < 0.15
+        s.printer.travel = Travel(x_min=-2, x_max=rng.uniform(150, 320), y_min=-2, y_max=rng.uniform(150, 320))
+        s.printer.table.overhang_y = rng.random() < 0.5
+        v(f"random_{i}", s)
+
+    cases = []
+    for name, s in variants:
+        clear_cache()
+        c = compose_drawing(s)
+        entry = {"name": name, "settings": s.model_dump(mode="json"), "preview": preview_payload(c),
+                 "frame_fitted": c.frame_fitted, "dashed_solid": c.dashed_solid,
+                 "source_strokes": len(c.source_strokes)}
+        try:
+            entry["files"] = [{k: f[k] for k in ("filename", "gcode", "pass", "rotation", "test")}
+                              for f in make_all_files(c, tests=True)]
+            entry["gcode_filename"] = gcode_filename(c)
+        except GenerationRefused as e:
+            entry["refused"] = e.errors
+        cases.append(entry)
+    (d / "cases.json").write_text(json.dumps(cases, ensure_ascii=False, allow_nan=False), encoding="utf-8")
+    print(f"drawing_pipeline: {len(cases)} cases, {sum('files' in c for c in cases)} with gcode")
+
+
 def main() -> None:
     os.environ["HANDWRITER_HOME"] = tempfile.mkdtemp(prefix="hw-golden-")
     OUT.mkdir(parents=True, exist_ok=True)
@@ -1148,6 +1247,7 @@ def main() -> None:
     plan_case()
     split_geometry_case()
     split_case()
+    drawing_pipeline_case()
     shutil.copy(TEST_FONTS / "BadScript-Regular.ttf", user_fonts_dir())
 
     save_case("text_default", text_settings(), text_run)

@@ -1,6 +1,7 @@
 pub mod model;
 pub mod ops;
 pub mod passes;
+pub mod pipeline;
 pub mod place;
 pub mod sources;
 pub mod split;

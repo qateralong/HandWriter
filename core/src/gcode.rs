@@ -50,6 +50,18 @@ pub fn travel_moves(strokes: &[Vec<Point>]) -> Vec<(Point, Point)> {
     moves
 }
 
+impl Stats {
+    pub fn as_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "draw_mm": numeric::round_to(self.draw_mm, 1),
+            "travel_mm": numeric::round_to(self.travel_mm, 1),
+            "strokes": self.strokes,
+            "lifts": self.lifts,
+            "time_s": self.time_s.round_ties_even() as i64,
+        })
+    }
+}
+
 pub fn compute_stats(strokes: &[Vec<Point>], s: &Settings) -> Stats {
     let pr = &s.printer;
     let strokes: Vec<Vec<Point>> = strokes.iter().filter(|st| !st.is_empty()).cloned().collect();

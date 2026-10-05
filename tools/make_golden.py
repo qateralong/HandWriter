@@ -1,13 +1,3 @@
-"""Эталоны для переноса на Rust: gcode текущей Python-версии и данные, из которых он собран.
-
-Каждый случай — папка tests/golden/<имя>/:
-  settings.json  — настройки на входе;
-  input/         — файлы чертежей на входе (если есть);
-  files.json     — для каждого gcode-файла: штрихи, настройки прохода, заголовок — то, что получает generate_gcode;
-  *.gcode        — результат.
-
-Запуск: python tools/make_golden.py
-"""
 from __future__ import annotations
 
 import io
@@ -18,19 +8,19 @@ import sys
 import tempfile
 from pathlib import Path
 
+import ezdxf
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from handwriter import gcode as gcode_mod
+from handwriter.drawing.pipeline import compose_drawing, make_all_files
+from handwriter.drawing.sources import clear_cache
+from handwriter.paths import user_drawings_dir, user_fonts_dir
+from handwriter.pipeline import compose, make_gcode, make_test_gcode
+from handwriter.settings import Settings, Travel, default_profiles
+
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "tests" / "golden"
-sys.path.insert(0, str(ROOT))
-os.environ["HANDWRITER_HOME"] = tempfile.mkdtemp(prefix="hw-golden-")
-
-import ezdxf  # noqa: E402
-
-from handwriter import gcode as gcode_mod  # noqa: E402
-from handwriter.drawing.pipeline import compose_drawing, make_all_files  # noqa: E402
-from handwriter.drawing.sources import clear_cache  # noqa: E402
-from handwriter.paths import user_drawings_dir, user_fonts_dir  # noqa: E402
-from handwriter.pipeline import compose, make_gcode, make_test_gcode  # noqa: E402
-from handwriter.settings import Settings, Travel, default_profiles  # noqa: E402
 
 TEST_FONTS = ROOT / "tests" / "fonts"
 
@@ -63,7 +53,6 @@ def dxf_simple() -> bytes:
 
 
 class Recorder:
-    """Перехватывает вызовы generate_gcode и запоминает входные данные."""
 
     def __init__(self):
         self.calls: list[dict] = []
@@ -96,7 +85,6 @@ class Recorder:
 
 def save_case(name: str, s: Settings, run, inputs: dict[str, bytes] | None = None) -> None:
     d = OUT / name
-    # готовые входные файлы не пересоздаются: в DXF попадают дата и случайные GUID
     inputs = {f: ((d / "input" / f).read_bytes() if (d / "input" / f).exists() else data)
               for f, data in (inputs or {}).items()}
     shutil.rmtree(d, ignore_errors=True)
@@ -115,7 +103,7 @@ def save_case(name: str, s: Settings, run, inputs: dict[str, bytes] | None = Non
         (d / fname).write_text(call.pop("gcode"), encoding="utf-8", newline="\n")
         files.append({"filename": fname, **call})
     (d / "files.json").write_text(json.dumps(files, ensure_ascii=False), encoding="utf-8")
-    print(f"{name}: {len(files)} файл(ов)")
+    print(f"{name}: {len(files)} files")
 
 
 def text_run(s: Settings) -> list[str]:
@@ -152,7 +140,6 @@ def drawing_settings(file: str = "builtin:test") -> Settings:
 
 
 def numeric_case() -> None:
-    """Случайные числа и результаты math.dist, sum и repr — для проверки numeric.rs."""
     import math
     import random
     rng = random.Random(20261005)
@@ -172,9 +159,142 @@ def numeric_case() -> None:
     print("numeric.json")
 
 
+def constraint_cases() -> list:
+    import annotated_types as at
+    from pydantic import BaseModel
+
+    out = []
+
+    def walk(model, path):
+        for name, f in model.model_fields.items():
+            ann = f.annotation
+            if isinstance(ann, type) and issubclass(ann, BaseModel):
+                walk(ann, path + [name])
+                continue
+            lo = hi = None
+            for m in f.metadata:
+                if isinstance(m, at.Ge):
+                    lo = ("ge", m.ge)
+                elif isinstance(m, at.Gt):
+                    lo = ("gt", m.gt)
+                elif isinstance(m, at.Le):
+                    hi = m.le
+            if lo is None and hi is None:
+                continue
+            step = 1 if ann is int else 1e-9
+            values = []
+            if lo is not None:
+                values += [lo[1] - step, lo[1], lo[1] + step]
+            if hi is not None:
+                values += [hi - step, hi, hi + step]
+            for v in values:
+                data: dict = {}
+                node = data
+                for key in path:
+                    node = node.setdefault(key, {})
+                node[name] = v
+                try:
+                    Settings.model_validate(json.loads(json.dumps(data)))
+                    ok = True
+                except ValueError:
+                    ok = False
+                out.append([".".join(path + [name]), data, ok])
+
+    walk(Settings, [])
+    return out
+
+
+def check_cases() -> list:
+    import random
+
+    from handwriter.checks import check_bounds, check_settings
+
+    rng = random.Random(7)
+    variants = []
+    base = Settings()
+    variants.append(base)
+    for mutate in (
+        lambda s: setattr(s.sheet, "width", 0),
+        lambda s: setattr(s.sheet, "margin_left", -1),
+        lambda s: setattr(s.sheet, "margin_right", 150),
+        lambda s: setattr(s.sheet, "indent", 140),
+        lambda s: setattr(s.sheet, "first_line_top", 196),
+        lambda s: setattr(s.sheet, "line_pitch", 0),
+        lambda s: setattr(s.typography, "size_mm", 0),
+        lambda s: setattr(s.typography, "size_mm", 4.5),
+        lambda s: (setattr(s.printer, "pen_up_z", -1.5), setattr(s.printer, "pen_down_z", -3.25)),
+        lambda s: setattr(s.printer, "pen_up_z", 1.5),
+        lambda s: setattr(s.printer, "pen_down_z", 0.5),
+        lambda s: (setattr(s.printer, "feed_draw", 0), setattr(s.printer, "feed_z", -5)),
+        lambda s: setattr(s.printer, "simplify_tol", -0.1),
+        lambda s: setattr(s.printer, "travel", Travel(x_min=5, x_max=1, y_min=0, y_max=10)),
+        lambda s: setattr(s.printer, "travel", Travel(x_min=5, x_max=100, y_min=0, y_max=10)),
+        lambda s: setattr(s.printer, "travel", Travel(x_min=-2, x_max=200, y_min=-2, y_max=230)),
+        lambda s: setattr(s.printer, "safety_margin", -1),
+        lambda s: (setattr(s.printer, "flip_x", True), setattr(s.printer, "safety_margin", 0.0)),
+        lambda s: (setattr(s.printer, "flip_y", True), s.printer.__setattr__("_use_work_area", True)),
+    ):
+        s = Settings()
+        mutate(s)
+        flag = s.printer._use_work_area
+        s = Settings.model_validate(s.model_dump())
+        s.printer._use_work_area = flag
+        variants.append(s)
+    out = []
+    for s in variants:
+        strokes = [[(rng.uniform(-20, 240), rng.uniform(-20, 240)) for _ in range(rng.randint(1, 6))]
+                   for _ in range(rng.randint(0, 5))]
+        settings = s.model_dump(mode="json")
+        settings["printer"]["_use_work_area"] = s.printer._use_work_area
+        errors, warnings = check_settings(s)
+        out.append({"settings": settings, "strokes": strokes, "errors": errors, "warnings": warnings,
+                    "bounds": check_bounds(strokes, s), "bounds2": check_bounds(strokes, s, limit=2)})
+    return out
+
+
+def geometry_cases() -> dict:
+    import random
+
+    from handwriter.geometry import make_transform, polyline_length, rdp, rdp_indices
+
+    rng = random.Random(11)
+    transforms = []
+    for _ in range(300):
+        rot, dx, dy = rng.uniform(-360, 360), rng.uniform(-50, 50), rng.uniform(-50, 50)
+        p = (rng.uniform(-300, 300), rng.uniform(-300, 300))
+        transforms.append([rot, dx, dy, p, make_transform(rot, dx, dy)(p)])
+    for rot in (0, 90, 180, 270, -90, 45, 1.5):
+        p = (12.5, -7.25)
+        transforms.append([rot, 0.0, 0.0, p, make_transform(rot, 0.0, 0.0)(p)])
+    polylines = []
+    for _ in range(200):
+        n = rng.randint(0, 40)
+        x = y = 0.0
+        pts = []
+        for _ in range(n):
+            x += rng.uniform(-3, 3)
+            y += rng.uniform(-3, 3)
+            pts.append((x, y))
+        if n > 3 and rng.random() < 0.2:
+            pts[2] = pts[0]
+        tol = rng.choice([0.0, 0.01, 0.05, 0.3, 1.0, 5.0])
+        keep = sorted(rng.sample(range(n), min(n, 2))) if rng.random() < 0.3 else []
+        polylines.append({"points": pts, "tol": tol, "must_keep": keep, "rdp": rdp(pts, tol),
+                          "indices": rdp_indices(pts, tol, keep), "length": polyline_length(pts)})
+    return {"transforms": transforms, "polylines": polylines}
+
+
+def conformance_case() -> None:
+    data = {"constraints": constraint_cases(), "checks": check_cases(), "geometry": geometry_cases()}
+    (OUT / "conformance.json").write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    print(f"conformance.json: {len(data['constraints'])} constraint cases, {len(data['checks'])} check cases")
+
+
 def main() -> None:
+    os.environ["HANDWRITER_HOME"] = tempfile.mkdtemp(prefix="hw-golden-")
     OUT.mkdir(parents=True, exist_ok=True)
     numeric_case()
+    conformance_case()
     shutil.copy(TEST_FONTS / "BadScript-Regular.ttf", user_fonts_dir())
 
     save_case("text_default", text_settings(), text_run)

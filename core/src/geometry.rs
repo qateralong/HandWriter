@@ -1,5 +1,3 @@
-//! Точки, ломаные, упрощение Рамера — Дугласа — Пекера.
-
 use crate::numeric;
 
 pub type Point = (f64, f64);
@@ -8,7 +6,6 @@ pub fn rdp(points: &[Point], tol: f64) -> Vec<Point> {
     rdp_indices(points, tol, &[]).into_iter().map(|i| points[i]).collect()
 }
 
-/// Индексы точек, которые остаются после упрощения; `must_keep` не выбрасываются никогда.
 pub fn rdp_indices(points: &[Point], tol: f64, must_keep: &[usize]) -> Vec<usize> {
     let n = points.len();
     if n < 3 || tol <= 0.0 {
@@ -31,7 +28,11 @@ pub fn rdp_indices(points: &[Point], tol: f64, must_keep: &[usize]) -> Vec<usize
         let len = numeric::hypot(dx, dy);
         let (mut best, mut idx) = (-1.0_f64, 0usize);
         for (k, &(px, py)) in points.iter().enumerate().take(j).skip(i + 1) {
-            let d = if len == 0.0 { numeric::hypot(px - ax, py - ay) } else { (dy * (px - ax) - dx * (py - ay)).abs() / len };
+            let d = if len == 0.0 {
+                numeric::hypot(px - ax, py - ay)
+            } else {
+                (dy * (px - ax) - dx * (py - ay)).abs() / len
+            };
             if d > best {
                 best = d;
                 idx = k;
@@ -46,7 +47,6 @@ pub fn rdp_indices(points: &[Point], tol: f64, must_keep: &[usize]) -> Vec<usize
     (0..n).filter(|&i| keep[i]).collect()
 }
 
-/// Поворот на `rotation_deg` градусов вокруг начала координат и сдвиг на (`dx`, `dy`).
 pub fn make_transform(rotation_deg: f64, dx: f64, dy: f64) -> impl Fn(Point) -> Point {
     let a = rotation_deg.to_radians();
     let (c, s) = (a.cos(), a.sin());

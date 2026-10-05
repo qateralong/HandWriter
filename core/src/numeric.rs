@@ -1,7 +1,3 @@
-//! Числовые функции, повторяющие CPython бит в бит: от них зависят длины путей,
-//! время печати и последние знаки в gcode, а результат должен совпасть с версией 1.x.
-
-/// `sum()` по числам с плавающей точкой: с Python 3.12 — компенсированное суммирование Ноймайера.
 pub fn sum<I: IntoIterator<Item = f64>>(values: I) -> f64 {
     let mut total = 0.0_f64;
     let mut c = 0.0_f64;
@@ -36,7 +32,6 @@ fn dl_fast_sum(a: f64, b: f64) -> DoubleLength {
     DoubleLength { hi: x, lo: b - z }
 }
 
-/// `vector_norm` из CPython (Modules/mathmodule.c): почти всегда правильно округлённая норма.
 fn vector_norm(vec: &mut [f64], max: f64, found_nan: bool) -> f64 {
     if max.is_infinite() {
         return max;
@@ -75,12 +70,10 @@ fn vector_norm(vec: &mut [f64], max: f64, found_nan: bool) -> f64 {
     h / scale
 }
 
-/// Показатель `e` из `frexp`: `v = m * 2^e`, `0.5 <= |m| < 1`. Для конечных ненулевых `v`.
 fn frexp_exp(v: f64) -> i32 {
     let bits = v.abs().to_bits();
     let exp = ((bits >> 52) & 0x7ff) as i32;
     if exp == 0 {
-        // субнормальное число
         let lz = (bits << 12).leading_zeros() as i32;
         -1022 - lz
     } else {
@@ -88,12 +81,10 @@ fn frexp_exp(v: f64) -> i32 {
     }
 }
 
-/// `ldexp(1.0, e)` для `e`, при котором результат — нормальное число.
 fn ldexp1(e: i32) -> f64 {
     f64::from_bits(((e + 1023) as u64) << 52)
 }
 
-/// `math.dist(p, q)` для точек на плоскости.
 pub fn dist(p: (f64, f64), q: (f64, f64)) -> f64 {
     let mut d = [(p.0 - q.0).abs(), (p.1 - q.1).abs()];
     let found_nan = d[0].is_nan() || d[1].is_nan();
@@ -106,12 +97,18 @@ pub fn dist(p: (f64, f64), q: (f64, f64)) -> f64 {
     vector_norm(&mut d, max, found_nan)
 }
 
-/// `math.hypot(x, y)`.
 pub fn hypot(x: f64, y: f64) -> f64 {
     dist((x, y), (0.0, 0.0))
 }
 
-/// `repr(float)`: кратчайшая запись, всегда с точкой или экспонентой в стиле Python (`1e+16`, `1e-05`).
+pub fn min(a: f64, b: f64) -> f64 {
+    if b < a { b } else { a }
+}
+
+pub fn max(a: f64, b: f64) -> f64 {
+    if b > a { b } else { a }
+}
+
 pub fn repr(v: f64) -> String {
     if v.is_nan() {
         return "nan".into();
@@ -122,8 +119,8 @@ pub fn repr(v: f64) -> String {
     let a = v.abs();
     if a != 0.0 && !(1e-4..1e16).contains(&a) {
         let s = format!("{v:e}");
-        let (mant, exp) = s.split_once('e').expect("в экспоненциальной записи есть e");
-        let exp: i32 = exp.parse().expect("показатель — целое число");
+        let (mant, exp) = s.split_once('e').expect("exponent form");
+        let exp: i32 = exp.parse().expect("integer exponent");
         let sign = if exp < 0 { '-' } else { '+' };
         return format!("{mant}e{sign}{:02}", exp.abs());
     }
@@ -150,7 +147,6 @@ mod tests {
 
     #[test]
     fn sum_is_compensated() {
-        // в Python 3.12+: sum([0.1] * 10) == 1.0, наивное сложение даёт 0.9999999999999999
         assert_eq!(sum(std::iter::repeat_n(0.1, 10)), 1.0);
         assert_eq!(sum([1e100, 1.0, -1e100, 1.0]), 2.0);
         assert_eq!(sum([]), 0.0);

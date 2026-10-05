@@ -1,18 +1,14 @@
-//! gcode для карандаша: без нагрева и без G28, ноль — там, где стоит карандаш при запуске.
-
 use crate::checks::{to_machine, travel_box};
 use crate::geometry::{Point, polyline_length};
 use crate::numeric;
 use crate::settings::Settings;
 
-/// Число с двумя знаками после точки, без «-0.00».
 pub fn fmt(v: f64) -> String {
     let s = format!("{v:.2}");
     if s == "-0.00" { "0.00".into() } else { s }
 }
 
 fn feed(v: f64) -> String {
-    // round() в Python округляет половины к чётному
     format!("{}", v.round_ties_even() as i64)
 }
 
@@ -37,7 +33,6 @@ pub struct Stats {
     pub time_s: f64,
 }
 
-/// Переезды с поднятым карандашом: от нуля к первому штриху, между штрихами и обратно в ноль.
 pub fn travel_moves(strokes: &[Vec<Point>]) -> Vec<(Point, Point)> {
     let mut moves = Vec::new();
     let mut cur = (0.0, 0.0);
@@ -63,14 +58,15 @@ pub fn compute_stats(strokes: &[Vec<Point>], s: &Settings) -> Stats {
     let n = strokes.len();
     let mut t = 0.0;
     if pr.feed_draw > 0.0 && pr.feed_travel > 0.0 && pr.feed_z > 0.0 {
-        t = (draw / pr.feed_draw + travel / pr.feed_travel + 2.0 * dz * n as f64 / pr.feed_z
+        t = (draw / pr.feed_draw
+            + travel / pr.feed_travel
+            + 2.0 * dz * n as f64 / pr.feed_z
             + 2.0 * pr.pen_up_z.abs() / pr.feed_z)
             * 60.0;
     }
     Stats { draw_mm: draw, travel_mm: travel, strokes: n, lifts: n, time_s: t }
 }
 
-/// Текст для комментария gcode: всё не-ASCII — как `\xNN`, `\uNNNN`, `\UNNNNNNNN`.
 pub fn ascii(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for ch in text.chars() {
@@ -85,8 +81,6 @@ pub fn ascii(text: &str) -> String {
     out
 }
 
-/// gcode из штрихов в миллиметрах листа. `header` — строки комментария о задании,
-/// `info` — о листе и шрифте (если `None`, собирается из настроек почерка).
 pub fn generate_gcode(strokes: &[Vec<Point>], s: &Settings, header: &[String], info: Option<&[String]>) -> String {
     let pr = &s.printer;
     let (up, down) = (fmt(pr.pen_up_z), fmt(pr.pen_down_z));
@@ -130,10 +124,7 @@ pub fn generate_gcode(strokes: &[Vec<Point>], s: &Settings, header: &[String], i
         format!(" (NOT MEASURED, {} used)", if pr.use_work_area { "printer work area" } else { "sheet size" })
     };
     lines.extend([
-        format!(
-            "; pen up Z{up} down Z{down}, feed draw {fd} travel {ft} z {fz}, simplify {}",
-            fmt(pr.simplify_tol)
-        ),
+        format!("; pen up Z{up} down Z{down}, feed draw {fd} travel {ft} z {fz}, simplify {}", fmt(pr.simplify_tol)),
         format!(
             "; travel X{}..{} Y{}..{}{measured}, flip_x {} flip_y {}",
             fmt(bx.x_min),
@@ -151,9 +142,7 @@ pub fn generate_gcode(strokes: &[Vec<Point>], s: &Settings, header: &[String], i
             st.time_s / 60.0
         ),
     ]);
-    lines.extend(
-        ["G21", "G90", "M104 S0", "M140 S0", "M420 S0", "M211 S0", "G92 X0 Y0 Z0"].map(String::from),
-    );
+    lines.extend(["G21", "G90", "M104 S0", "M140 S0", "M420 S0", "M211 S0", "G92 X0 Y0 Z0"].map(String::from));
     lines.push(format!("G0 Z{up} F{fz}"));
     for stroke in strokes {
         let pts = round_stroke(stroke, s);

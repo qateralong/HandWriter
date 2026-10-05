@@ -1,9 +1,8 @@
-//! Настройки программы. Формат JSON совпадает с settings.json Python-версии (1.x),
-//! поэтому старый файл настроек читается без преобразований.
-
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::thread;
+use std::time::Duration;
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -163,7 +162,6 @@ impl Default for Connections {
     }
 }
 
-/// Измеренный ход карандаша в координатах принтера.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Travel {
     pub x_min: f64,
@@ -210,7 +208,6 @@ pub struct Printer {
     pub travel: Option<Travel>,
     pub work_w: f64,
     pub work_h: f64,
-    /// Границы по умолчанию — рабочая зона принтера (чертежи), а не размер листа (почерк). Не сохраняется.
     #[serde(skip)]
     pub use_work_area: bool,
     pub safety_margin: f64,
@@ -406,7 +403,6 @@ impl Default for DrawingPlacement {
     }
 }
 
-/// Рамка чертежа с основной надписью.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Frame {
@@ -500,7 +496,6 @@ impl Default for DrawingSplit {
     }
 }
 
-/// Лист A4, положенный по меткам на столе: зона, куда достаёт карандаш, в координатах принтера.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MarkedSheet {
@@ -518,7 +513,6 @@ impl Default for MarkedSheet {
     }
 }
 
-/// Лист A3 по меткам, четыре прохода.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct A3Sheet {
@@ -599,7 +593,13 @@ pub fn default_profiles() -> IndexMap<String, Profile> {
     m.insert(
         PROFILE_LINES.into(),
         Profile {
-            sheet: Sheet { first_line_top: 16.0, line_pitch: 8.0, ruling: Ruling::Lines, grid_step: 8.0, ..Sheet::default() },
+            sheet: Sheet {
+                first_line_top: 16.0,
+                line_pitch: 8.0,
+                ruling: Ruling::Lines,
+                grid_step: 8.0,
+                ..Sheet::default()
+            },
             size_mm: 2.5,
             baseline_shift: 0.3,
         },
@@ -675,7 +675,6 @@ impl Default for Settings {
     }
 }
 
-/// Граница допустимого диапазона: включительно (`>=`, `<=`) или строго (`>`).
 #[derive(Clone, Copy)]
 enum Lo {
     Ge(f64),
@@ -694,7 +693,6 @@ fn check_range(errors: &mut Vec<String>, name: &str, v: f64, lo: Lo, hi: Option<
 }
 
 impl Settings {
-    /// Поля вне допустимых диапазонов (те же ограничения, что в Python-версии).
     pub fn invalid_fields(&self) -> Vec<String> {
         use Lo::{Ge, Gt};
         let mut e = Vec::new();
@@ -762,18 +760,27 @@ impl Settings {
     pub fn from_json(text: &str) -> Result<Self, String> {
         let s: Settings = serde_json::from_str(text).map_err(|e| e.to_string())?;
         let bad = s.invalid_fields();
-        if bad.is_empty() { Ok(s) } else { Err(format!("вне допустимых значений: {}", bad.join(", "))) }
+        if bad.is_empty() { Ok(s) } else { Err(format!("out of range: {}", bad.join(", "))) }
     }
 
     pub fn to_json(&self) -> String {
-        serde_json::to_string_pretty(self).expect("настройки всегда сериализуются")
+        serde_json::to_string_pretty(self).expect("settings serialize")
     }
 }
 
-/// Прочитать настройки. Нет файла — настройки по умолчанию. Испорченный файл
-/// переименовывается в settings.broken.json, и тоже возвращаются настройки по умолчанию.
+fn retry<T>(mut f: impl FnMut() -> io::Result<T>) -> io::Result<T> {
+    let attempts = 20;
+    for _ in 1..attempts {
+        match f() {
+            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => thread::sleep(Duration::from_millis(20)),
+            other => return other,
+        }
+    }
+    f()
+}
+
 pub fn load_settings(path: &Path) -> io::Result<Settings> {
-    let text = match fs::read_to_string(path) {
+    let text = match retry(|| fs::read_to_string(path)) {
         Ok(t) => t,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Settings::default()),
         Err(e) => return Err(e),
@@ -781,15 +788,41 @@ pub fn load_settings(path: &Path) -> io::Result<Settings> {
     match Settings::from_json(&text) {
         Ok(s) => Ok(s),
         Err(_) => {
-            fs::rename(path, path.with_extension("broken.json"))?;
+            retry(|| fs::rename(path, path.with_extension("broken.json")))?;
             Ok(Settings::default())
         }
     }
 }
 
-/// Записать настройки атомарно: во временный файл, затем переименовать.
 pub fn save_settings(s: &Settings, path: &Path) -> io::Result<()> {
     let tmp = path.with_extension("tmp");
     fs::write(&tmp, s.to_json())?;
-    fs::rename(&tmp, path)
+    retry(|| fs::rename(&tmp, path))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load_missing_broken_and_saved_files() {
+        let dir = std::env::temp_dir().join(format!("hw-settings-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        let _ = fs::remove_file(&path);
+        assert_eq!(load_settings(&path).unwrap(), Settings::default());
+
+        let mut s = Settings::default();
+        s.printer.pen_up_z = 5.5;
+        s.text = "x".into();
+        save_settings(&s, &path).unwrap();
+        assert!(!dir.join("settings.tmp").exists());
+        assert_eq!(load_settings(&path).unwrap(), s);
+
+        fs::write(&path, r#"{"randomness": {"size": 31}}"#).unwrap();
+        assert_eq!(load_settings(&path).unwrap(), Settings::default());
+        assert!(!path.exists());
+        assert!(dir.join("settings.broken.json").exists());
+        fs::remove_dir_all(&dir).unwrap();
+    }
 }

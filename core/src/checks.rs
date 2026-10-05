@@ -1,7 +1,5 @@
-//! Проверки настроек и границ хода карандаша.
-
 use crate::geometry::Point;
-use crate::numeric::repr;
+use crate::numeric::{max, min, repr};
 use crate::settings::Settings;
 
 pub const Z_DOWN_MIN: f64 = -3.0;
@@ -13,11 +11,9 @@ pub struct TravelBox {
     pub x_max: f64,
     pub y_min: f64,
     pub y_max: f64,
-    /// Ход измерен, а не взят по рабочей зоне или размеру листа.
     pub measured: bool,
 }
 
-/// Координаты листа → координаты принтера (с учётом отражения осей).
 pub fn to_machine((x, y): Point, s: &Settings) -> Point {
     (if s.printer.flip_x { -x } else { x }, if s.printer.flip_y { -y } else { y })
 }
@@ -30,10 +26,9 @@ pub fn travel_box(s: &Settings) -> TravelBox {
     let (w, h) = if pr.use_work_area { (pr.work_w, pr.work_h) } else { (s.sheet.width, s.sheet.height) };
     let (x0, y0) = to_machine((0.0, 0.0), s);
     let (x1, y1) = to_machine((w, h), s);
-    TravelBox { x_min: x0.min(x1), x_max: x0.max(x1), y_min: y0.min(y1), y_max: y0.max(y1), measured: false }
+    TravelBox { x_min: min(x0, x1), x_max: max(x0, x1), y_min: min(y0, y1), y_max: max(y0, y1), measured: false }
 }
 
-/// Ошибки и предупреждения.
 pub type Issues = (Vec<String>, Vec<String>);
 
 pub fn check_settings(s: &Settings) -> Issues {
@@ -127,12 +122,11 @@ pub fn check_printer(s: &Settings) -> Issues {
     (errors, warnings)
 }
 
-/// Точки вне хода карандаша (с запасом). Пустой список — всё в порядке.
 pub fn check_bounds(strokes_mm: &[Vec<Point>], s: &Settings, limit: usize) -> Vec<String> {
     let bx = travel_box(s);
     let m = s.printer.safety_margin;
-    let (lo_x, hi_x) = ((bx.x_min + m).min(0.0), (bx.x_max - m).max(0.0));
-    let (lo_y, hi_y) = ((bx.y_min + m).min(0.0), (bx.y_max - m).max(0.0));
+    let (lo_x, hi_x) = (min(bx.x_min + m, 0.0), max(bx.x_max - m, 0.0));
+    let (lo_y, hi_y) = (min(bx.y_min + m, 0.0), max(bx.y_max - m, 0.0));
     let mut bad = Vec::new();
     let mut count = 0usize;
     for p in strokes_mm.iter().flatten() {

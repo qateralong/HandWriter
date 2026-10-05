@@ -1,5 +1,3 @@
-//! Сверка с эталонами Python-версии 1.x (tests/golden, создаются tools/make_golden.py).
-
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -16,7 +14,7 @@ fn golden_dir() -> PathBuf {
 
 fn cases() -> Vec<PathBuf> {
     let mut v: Vec<PathBuf> = fs::read_dir(golden_dir())
-        .expect("нет tests/golden: запустите python tools/make_golden.py")
+        .expect("tests/golden is missing: run python tools/make_golden.py")
         .map(|e| e.unwrap().path())
         .filter(|p| p.join("files.json").exists())
         .collect();
@@ -45,14 +43,14 @@ struct FileCase {
 fn first_diff(a: &str, b: &str) -> String {
     for (i, (x, y)) in a.lines().zip(b.lines()).enumerate() {
         if x != y {
-            return format!("строка {}:\n  rust:   {x}\n  python: {y}", i + 1);
+            return format!("line {}:\n  rust:   {x}\n  python: {y}", i + 1);
         }
     }
-    format!("разное число строк: rust {}, python {}", a.lines().count(), b.lines().count())
+    format!("line count differs: rust {}, python {}", a.lines().count(), b.lines().count())
 }
 
 fn part_settings(v: &Value) -> Settings {
-    let mut s = Settings::from_json(&v.to_string()).expect("настройки прохода читаются");
+    let mut s = Settings::from_json(&v.to_string()).expect("pass settings parse");
     s.printer.use_work_area = v["printer"]["_use_work_area"].as_bool().unwrap_or(false);
     s
 }
@@ -72,7 +70,6 @@ fn settings_roundtrip_matches_python() {
 fn default_settings_match_python() {
     let text = fs::read_to_string(golden_dir().join("text_plain/settings.json")).unwrap();
     let mut py: Value = serde_json::from_str(&text).unwrap();
-    // в этом случае заданы ход карандаша, отключены случайность и соединения
     py["printer"]["travel"] = Value::Null;
     py["randomness"]["enabled"] = Value::Bool(true);
     py["connections"]["enabled"] = Value::Bool(true);
@@ -84,8 +81,7 @@ fn default_settings_match_python() {
 fn gcode_matches_python() {
     let mut checked = 0;
     for case in cases() {
-        let files: Vec<FileCase> =
-            serde_json::from_str(&fs::read_to_string(case.join("files.json")).unwrap()).unwrap();
+        let files: Vec<FileCase> = serde_json::from_str(&fs::read_to_string(case.join("files.json")).unwrap()).unwrap();
         for f in files {
             let s = part_settings(&f.settings);
             let name = format!("{}/{}", case.file_name().unwrap().to_string_lossy(), f.filename);
@@ -93,7 +89,7 @@ fn gcode_matches_python() {
             assert_eq!(
                 (st.draw_mm, st.travel_mm, st.time_s),
                 (f.stats.draw_mm, f.stats.travel_mm, f.stats.time_s),
-                "{name}: статистика"
+                "{name}: stats"
             );
             let got = generate_gcode(&f.strokes, &s, f.header.as_deref().unwrap_or(&[]), f.info.as_deref());
             let want = fs::read_to_string(case.join(&f.filename)).unwrap();
@@ -101,7 +97,7 @@ fn gcode_matches_python() {
             checked += 1;
         }
     }
-    assert!(checked >= 20, "проверено файлов: {checked}");
+    assert!(checked >= 20, "files checked: {checked}");
 }
 
 #[derive(Deserialize)]
@@ -114,8 +110,7 @@ struct NumericJson {
 
 #[test]
 fn numeric_matches_python() {
-    let n: NumericJson =
-        serde_json::from_str(&fs::read_to_string(golden_dir().join("numeric.json")).unwrap()).unwrap();
+    let n: NumericJson = serde_json::from_str(&fs::read_to_string(golden_dir().join("numeric.json")).unwrap()).unwrap();
     for (p, q, d) in n.dist {
         assert_eq!(numeric::dist(p, q).to_bits(), d.to_bits(), "dist({p:?}, {q:?})");
     }

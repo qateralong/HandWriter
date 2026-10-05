@@ -1,4 +1,5 @@
 pub mod checks;
+pub mod drawing;
 pub mod gcode;
 pub mod geometry;
 pub mod glyphs;

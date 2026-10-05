@@ -635,6 +635,181 @@ def text_case() -> None:
     print(f"text: {len(cases)} cases, {len(hyph)} hyphenation words")
 
 
+SVG_IMPORTS = {
+    "simple_cm": """<svg xmlns="http://www.w3.org/2000/svg" width="10cm" height="6cm" viewBox="0 0 1000 600">
+  <g transform="scale(10)" fill="none" stroke="black" style="stroke-width:0.25">
+    <rect x="0" y="0" width="100" height="60"/>
+    <g transform="translate(10 50)"><line x1="0" y1="0" x2="80" y2="-40"/></g>
+    <ellipse cx="30" cy="30" rx="12" ry="12"/>
+    <path d="M60 40 a15 15 0 0 1 30 0"/>
+    <polyline points="10,10 20,20 30,10"/>
+  </g>
+</svg>""",
+    "css_use_text": """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="210mm" height="148mm"
+     viewBox="-5 -5 210 148">
+  <style><![CDATA[
+    /* comment { stroke: red } */
+    .thick { stroke: #000; stroke-width: 0.8 !important ; fill: none }
+    .thin, line { stroke: black; stroke-width: 0.2 }
+    #special { stroke-dasharray: 4, 1.5 ; stroke-dashoffset: 1 }
+    rect.bg { fill: WHITE; stroke: none }
+    * { visibility: visible }
+    .ghost { visibility: hidden }
+    bad selector here { stroke: red }
+  ]]></style>
+  <defs>
+    <symbol id="cross"><path class="thin" d="M-2 0 H2 M0 -2 V2"/></symbol>
+    <g id="mark"><circle class="thick" r="1.5"/></g>
+  </defs>
+  <rect class="bg" width="200" height="138"/>
+  <rect class="thick" x="1" y="1" width="198" height="136" rx="4"/>
+  <rect class="thick" x="10" y="10" width="20" height="10" ry="30"/>
+  <rect class="thick" x="40" y="10" width="0" height="10"/>
+  <line id="special" x1="10" y1="30" x2="190" y2="30"/>
+  <use xlink:href="#cross" x="50" y="50"/>
+  <use href="##mark" x="60" y="50" style="stroke-width: inherit"/>
+  <use href="#missing"/>
+  <g fill="none" stroke="black" stroke-width="0.35" transform="translate(0 60)">
+    <polyline points="0,0 10,5 20,0 30"/>
+    <polygon points="40,0 50,10 60,0"/>
+    <path d="M70 0 C 80 20 90 -20 100 0 S 120 20 130 0" stroke-dasharray="none"/>
+    <path d="M140 0 Q 150 20 160 0 T 180 0" stroke-dasharray="2 1 0.5" stroke-dashoffset="-3"/>
+    <path d="L 5 5 oops"/>
+    <path class="ghost" d="M0 0 L5 5"/>
+    <g display="none"><path d="M0 0 L9 9"/></g>
+    <g style="display:none"><path d="M0 0 L9 9"/></g>
+    <path d="M0 20 L10 20" stroke="#FFF"/>
+    <path d="M0 25 L10 25" stroke="rgb(255, 255, 255)"/>
+  </g>
+  <g transform="translate(0 80)">
+    <path d="M10 0 L20 0 L20 10 Z M30 0 L40 0 L40 10 L30 10"/>
+    <circle cx="60" cy="5" r="4" fill="#333"/>
+    <ellipse cx="80" cy="5" rx="6" ry="0" fill="black"/>
+    <line x1="0" y1="0" x2="5" y2="5" fill="black"/>
+    <path d="M90 0 L100 0" fill="none" stroke="none"/>
+    <path d="M110 0 L110 0 L110 0 Z" fill="black"/>
+    <rect x="120" y="0" width="10" height="10" fill="white"/>
+  </g>
+  <svg x="150" y="100" width="40" height="30" viewBox="0 0 10 10">
+    <rect width="10" height="10" fill="none" stroke="black" stroke-width="0.1"/>
+  </svg>
+  <text x="20" y="130" font-size="5">Основная <tspan x="40" y="131">надпись</tspan>  тест</text>
+  <text><tspan>   </tspan></text>
+  <text transform="rotate(90)"><tspan x="3" y="4">повёрнутый</tspan></text>
+  <flowRoot><flowPara>поток</flowPara></flowRoot>
+  <image x="5" y="5" width="10" height="10"/>
+  <switch><g><line x1="0" y1="0" x2="1" y2="1" stroke="black"/></g></switch>
+  <a><line x1="1" y1="0" x2="2" y2="1" stroke="black"/></a>
+  <foreignObject><line x1="1" y1="0" x2="2" y2="1" stroke="black"/></foreignObject>
+  <unknown><line x1="1" y1="0" x2="2" y2="1" stroke="black"/></unknown>
+</svg>""",
+    "px_only": """<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0 L96 0 L96 96" stroke="black" fill="none"/></svg>""",
+    "wh_no_viewbox": """<svg xmlns="http://www.w3.org/2000/svg" width="4in" height="3in"><path d="M0 0 L4 3" stroke="black" stroke-width="0.01"/></svg>""",
+    "percent_units": """<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 50 50"><path d="M0 0 L50 50" stroke="black"/></svg>""",
+    "pt_units_viewbox": """<svg xmlns="http://www.w3.org/2000/svg" width="72pt" height="36pt" viewBox="0 0 100 40"><path d="M0 0 L100 40" stroke="black"/></svg>""",
+    "not_svg": """<html><body/></html>""",
+    "broken": """<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0 L1 1" </svg>""",
+}
+SVG_IMPORTS_BYTES = {
+    "cp1251": '<?xml version="1.0" encoding="windows-1251"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="20mm" '
+              'height="10mm" viewBox="0 0 20 10"><text x="1" y="5">Чертёж</text><path d="M0 0 L20 10" '
+              'stroke="black"/></svg>'.encode("cp1251"),
+}
+
+
+def dump_import(res) -> dict:
+    return {
+        "kind": res.kind, "name": res.name,
+        "paths": [{"points": p.points, "closed": p.closed, "width": p.width, "layer": p.layer,
+                   "dash": list(p.dash) if p.dash is not None else None, "dash_offset": p.dash_offset}
+                  for p in res.paths],
+        "texts": [{"x": t.x, "y": t.y, "text": t.text, "kind": t.kind} for t in res.texts],
+        "warnings": res.warnings, "errors": res.errors, "units": res.units, "units_note": res.units_note,
+        "pages": res.pages, "page": res.page, "layers": res.layers, "bbox": res.bbox(),
+    }
+
+
+def drawing_import_case() -> None:
+    import random
+
+    from handwriter.drawing import ops
+    from handwriter.drawing.sources import TEST_SVG
+    from handwriter.drawing.svg_import import import_svg
+    from handwriter.settings import DrawingImport
+
+    d = OUT / "drawing_import"
+    shutil.rmtree(d, ignore_errors=True)
+    (d / "input").mkdir(parents=True)
+    inputs = {"builtin_test.svg": TEST_SVG.encode("utf-8"), "simple.svg": SVG_SIMPLE.encode("utf-8")}
+    inputs |= {f"{k}.svg": v.encode("utf-8") for k, v in SVG_IMPORTS.items()}
+    inputs |= {f"{k}.svg": v for k, v in SVG_IMPORTS_BYTES.items()}
+    imports = []
+    for fname, data in inputs.items():
+        (d / "input" / fname).write_bytes(data)
+        for units in ("auto", "mm", "in"):
+            for tol in (0.05, 0.5):
+                if units != "auto" and tol != 0.05:
+                    continue
+                imp = DrawingImport(units=units)
+                imports.append({"file": fname, "units": units, "tol": tol,
+                                "result": dump_import(import_svg(data, fname, imp, tol))})
+
+    rng = random.Random(17)
+
+    def rand_path(n, closed=False, scale=20.0):
+        pts = [(rng.uniform(-scale, scale), rng.uniform(-scale, scale)) for _ in range(n)]
+        if rng.random() < 0.2 and n > 2:
+            pts.insert(1, pts[0])
+        if rng.random() < 0.15 and n > 3:
+            pts[2] = (pts[1][0] + 1e-12, pts[1][1])
+        if closed and pts:
+            pts.append(pts[0])
+        return pts
+
+    opsdata = {"dash": [], "offset": [], "expand": [], "join": [], "order": [], "outside": [], "dedupe": []}
+    for _ in range(150):
+        pts = rand_path(rng.randint(1, 8))
+        pat = [rng.choice([0.0, 0.5, 1.0, 2.5, 4.0]) for _ in range(rng.randint(0, 5))]
+        off = rng.choice([0.0, 1.3, -2.7, 100.0])
+        opsdata["dash"].append([pts, pat, off, ops.dash_polyline(pts, pat, off)])
+        opsdata["dedupe"].append([pts, ops.dedupe(pts)])
+    for _ in range(120):
+        closed = rng.random() < 0.5
+        pts = rand_path(rng.randint(1, 7), closed)
+        dd = rng.choice([0.0, 0.15, -0.3, 1.0])
+        opsdata["offset"].append([pts, dd, closed, ops.offset_polyline(pts, dd, closed)])
+        passes, step = rng.randint(1, 5), rng.choice([0.1, 0.15, 0.5])
+        opsdata["expand"].append([pts, closed, passes, step, ops.expand_passes(pts, closed, passes, step)])
+    for _ in range(60):
+        paths = []
+        for _ in range(rng.randint(0, 25)):
+            p = rand_path(rng.randint(2, 4), rng.random() < 0.2, 10.0)
+            if paths and rng.random() < 0.5:
+                q = rng.choice(paths)
+                end = q[-1] if rng.random() < 0.5 else q[0]
+                p[0] = (end[0] + rng.uniform(-0.03, 0.03), end[1] + rng.uniform(-0.03, 0.03))
+            paths.append(p)
+        tol = rng.choice([0.0, 0.01, 0.05, 0.2])
+        opsdata["join"].append([paths, tol, ops.join_paths(paths, tol)])
+        long_path = rng.choice([0.0, 10.0, 30.0, 1e9])
+        start = (rng.uniform(-5, 5), rng.uniform(-5, 5))
+        opsdata["order"].append([paths, long_path, start, [[i, s] for i, s in ops.order_paths(paths, long_path, start)]])
+    grid_paths = [[(float(x), float(y)), (float(x) + 1.0, float(y))] for x in range(30) for y in range(30)]
+    rng.shuffle(grid_paths)
+    opsdata["order"].append([grid_paths, 0.5, (0.0, 0.0),
+                             [[i, s] for i, s in ops.order_paths(grid_paths, 0.5, (0.0, 0.0))]])
+    for _ in range(150):
+        pts = rand_path(rng.randint(1, 6))
+        box = rng.choice([(-5.0, -5.0, 5.0, 5.0), (0.0, 0.0, 20.0, 20.0), (-30.0, -30.0, 30.0, 30.0), (1.0, 1.0, 1.0, 9.0)])
+        opsdata["outside"].append([pts, box, ops.outside_parts(pts, box)])
+
+    (d / "cases.json").write_text(json.dumps({"imports": imports, "ops": opsdata}, ensure_ascii=False),
+                                  encoding="utf-8")
+    print(f"drawing_import: {len(imports)} imports")
+
+
 def main() -> None:
     os.environ["HANDWRITER_HOME"] = tempfile.mkdtemp(prefix="hw-golden-")
     OUT.mkdir(parents=True, exist_ok=True)
@@ -642,6 +817,7 @@ def main() -> None:
     conformance_case()
     svg_fonts_case()
     text_case()
+    drawing_import_case()
     shutil.copy(TEST_FONTS / "BadScript-Regular.ttf", user_fonts_dir())
 
     save_case("text_default", text_settings(), text_run)

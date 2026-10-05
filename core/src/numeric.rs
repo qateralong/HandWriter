@@ -127,9 +127,44 @@ pub fn repr(v: f64) -> String {
     format!("{v:?}")
 }
 
+pub fn format_g(v: f64, prec: usize) -> String {
+    let prec = prec.max(1);
+    if v == 0.0 {
+        return if v.is_sign_negative() { "-0".into() } else { "0".into() };
+    }
+    if !v.is_finite() {
+        return repr(v);
+    }
+    let e = format!("{:.*e}", prec - 1, v);
+    let (mant, exp) = e.split_once('e').expect("exponent form");
+    let exp: i32 = exp.parse().expect("integer exponent");
+    let strip = |s: &str| -> String {
+        if s.contains('.') { s.trim_end_matches('0').trim_end_matches('.').to_string() } else { s.to_string() }
+    };
+    if exp < -4 || exp >= prec as i32 {
+        let sign = if exp < 0 { '-' } else { '+' };
+        format!("{}e{sign}{:02}", strip(mant), exp.abs())
+    } else {
+        strip(&format!("{:.*}", (prec as i32 - 1 - exp) as usize, v))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn format_g_matches_python() {
+        assert_eq!(format_g(1.0, 4), "1");
+        assert_eq!(format_g(0.254, 4), "0.254");
+        assert_eq!(format_g(0.1, 4), "0.1");
+        assert_eq!(format_g(25.4, 4), "25.4");
+        assert_eq!(format_g(0.26458333333333334, 4), "0.2646");
+        assert_eq!(format_g(12345.678, 4), "1.235e+04");
+        assert_eq!(format_g(0.00001234, 4), "1.234e-05");
+        assert_eq!(format_g(9999.6, 4), "1e+04");
+        assert_eq!(format_g(0.0001, 4), "0.0001");
+    }
 
     #[test]
     fn repr_matches_python() {

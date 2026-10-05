@@ -1480,6 +1480,69 @@ def raster_case() -> None:
     print(f"raster: {len(cases)} imports, {len(drawings)} drawings")
 
 
+def outline_font_case() -> None:
+    from handwriter.glyphs.outline_provider import OutlineGlyphProvider
+    from handwriter.pipeline import GenerationRefused
+
+    fonts = {}
+    texts = ["Съешь же ещё этих мягких французских булок", "fi fl ff ffi Th", "Привет, мир! 123", "ёЁйЙщ—«»…",
+             "Hello World", "a", "абв́где"]
+    for fname in ("BadScript-Regular.ttf", "MarckScript-Regular.ttf"):
+        prov = OutlineGlyphProvider.from_path(TEST_FONTS / fname)
+        d = prov.data
+        info = prov.info()
+        sample = sorted({ch for t in texts for ch in t} | set("абвгдеёжзийклмнопрстуфхцчшщъыьэюяABCDEFGHIJabcdefghij0123456789"))
+        contour_names = [d.cmap[ord(c)] for c in "абвгдйщЖQgfx@&8" if ord(c) in d.cmap][:12]
+        fonts[fname] = {
+            "name": prov.name, "upem": d.upem, "order": d.order, "cmap": [[k, v] for k, v in sorted(d.cmap.items())],
+            "metrics": {"x_height": d.metrics.x_height, "cap_height": d.metrics.cap_height, "ascent": d.metrics.ascent,
+                        "descent": d.metrics.descent, "x_height_source": d.metrics.x_height_source},
+            "analysis": d.analysis, "chars": info.chars, "variants": info.variants,
+            "names_for_char": {ch: prov.glyph_names_for_char(ch) for ch in sample},
+            "variant_pool": {ch: prov.variant_pool(ch) for ch in sample},
+            "space_advance": prov.space_advance(),
+            "advances": {n: prov.advance(n) for n in d.order[:80]},
+            "shape": [[t, [[g.name, g.cluster, g.advance, g.x_offset, g.y_offset] for g in prov.shape(t)]] for t in texts],
+            "contours": {n: d.contours(n) for n in contour_names},
+        }
+    cases = []
+    for name, fname, mut in [
+        ("bad_default", "BadScript-Regular.ttf", {}),
+        ("bad_plain", "BadScript-Regular.ttf", {"randomness__enabled": False, "connections__enabled": False}),
+        ("bad_variants_seed", "BadScript-Regular.ttf", {"randomness__seed": 99, "typography__size_mm": 4.0}),
+        ("marck_default", "MarckScript-Regular.ttf", {}),
+        ("marck_lines", "MarckScript-Regular.ttf", {"sheet__line_pitch": 8.0, "typography__size_mm": 2.5,
+                                                    "outline__px_per_em": 900.0, "outline__smooth": 0.06}),
+    ]:
+        s = Settings()
+        s.printer.travel = Travel(x_min=-2, x_max=200, y_min=-2, y_max=230)
+        s.font, s.mode = str(TEST_FONTS / fname), "outlines"
+        for path, v in mut.items():
+            obj = s
+            parts = path.split("__")
+            for k in parts[:-1]:
+                obj = getattr(obj, k)
+            setattr(obj, parts[-1], v)
+        s = Settings.model_validate(s.model_dump())
+        c = compose(s)
+        entry = {"name": name, "font": fname, "settings": s.model_dump(mode="json"), "errors": c.errors,
+                 "warnings": c.warnings}
+        if c.layout is not None:
+            entry["glyphs"] = [[g.word, g.letter, g.char, g.glyph, g.x, g.y, g.advance] for g in c.layout.glyphs]
+            entry["strokes"] = [st.points for st in c.layout.strokes]
+        try:
+            entry["gcode"] = make_gcode(c)
+        except GenerationRefused as e:
+            entry["refused"] = e.errors
+        cases.append(entry)
+    d = OUT / "outline_fonts"
+    shutil.rmtree(d, ignore_errors=True)
+    d.mkdir(parents=True)
+    (d / "cases.json").write_text(json.dumps({"fonts": fonts, "cases": cases}, ensure_ascii=False, allow_nan=False),
+                                  encoding="utf-8")
+    print(f"outline_fonts: {len(fonts)} fonts, {len(cases)} texts")
+
+
 def main() -> None:
     os.environ["HANDWRITER_HOME"] = tempfile.mkdtemp(prefix="hw-golden-")
     OUT.mkdir(parents=True, exist_ok=True)
@@ -1496,6 +1559,7 @@ def main() -> None:
     calibration_case()
     skeleton_case()
     raster_case()
+    outline_font_case()
     shutil.copy(TEST_FONTS / "BadScript-Regular.ttf", user_fonts_dir())
 
     save_case("text_default", text_settings(), text_run)

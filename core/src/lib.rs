@@ -7,6 +7,7 @@ pub mod glyphs;
 pub mod hyphen;
 pub mod layout;
 pub mod numeric;
+pub mod outline;
 pub mod pipeline;
 pub mod pyset;
 pub mod rand;

@@ -25,6 +25,19 @@ impl Default for SkeletonParams {
     }
 }
 
+impl From<&crate::settings::OutlineOptions> for SkeletonParams {
+    fn from(o: &crate::settings::OutlineOptions) -> Self {
+        Self {
+            px_per_em: o.px_per_em,
+            prune: o.prune,
+            extend: o.extend,
+            smooth: o.smooth,
+            simplify: o.simplify,
+            junction_merge: o.junction_merge,
+        }
+    }
+}
+
 impl SkeletonParams {
     pub fn key(&self) -> String {
         use crate::numeric::format_g as g;

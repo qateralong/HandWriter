@@ -112,6 +112,20 @@ pub fn compose(s: &Settings, prov: &dyn GlyphProvider) -> Composition {
         resume: None,
     };
     if sheet_ok {
+        let start = s.text_options.start_word;
+        let mut names: Vec<String> = Vec::new();
+        for w in pt.words.iter().filter(|w| w.index >= start) {
+            names.extend(prov.shape(&w.text).into_iter().map(|g| g.name));
+        }
+        names.extend(prov.shape("-").into_iter().map(|g| g.name));
+        if s.randomness.enabled && s.randomness.variants {
+            for w in pt.words.iter().filter(|w| w.index >= start) {
+                for ch in w.chars.iter() {
+                    names.extend(prov.variant_pool(&ch.to_string()));
+                }
+            }
+        }
+        prov.prepare(&names);
         let lay = layout(s, prov, &pt);
         errors.extend(lay.errors.iter().cloned());
         warnings.extend(lay.warnings.iter().cloned());
@@ -218,4 +232,11 @@ pub fn make_test_gcode(s: &Settings) -> Result<(String, Vec<Vec<Point>>), Vec<St
     }
     let header = ["TEST: writing area rectangle + axis arrows (X long, Y short)".to_string()];
     Ok((generate_gcode(&strokes, s, &header, None), strokes))
+}
+
+pub fn compose_with_font(s: &Settings, paths: &crate::glyphs::FontPaths) -> Composition {
+    match crate::glyphs::load_provider(&s.font, s.mode, &s.outline, paths) {
+        Ok(prov) => compose(s, prov.as_ref()),
+        Err(e) => compose_without_font(s, &e),
+    }
 }

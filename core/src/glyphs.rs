@@ -65,6 +65,10 @@ pub struct FontInfo {
     pub variants: IndexMap<String, Vec<String>>,
     pub metrics: Option<FontMetrics>,
     pub notes: Vec<String>,
+    pub features: Vec<String>,
+    pub gpos_features: Vec<String>,
+    pub variant_sources: IndexMap<String, IndexMap<String, Vec<String>>>,
+    pub ligatures: Vec<(String, String, String)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -95,6 +99,8 @@ pub trait GlyphProvider {
     fn has_char(&self, ch: &str) -> bool {
         !self.glyph_names_for_char(ch).is_empty()
     }
+
+    fn prepare(&self, _names: &[String]) {}
 
     fn glyph_names(&self) -> Vec<String> {
         let names: BTreeSet<String> =
@@ -355,6 +361,10 @@ impl GlyphProvider for StrokeGlyphProvider {
             variants: self.variants(),
             metrics: Some(self.metrics.clone()),
             notes: self.notes.clone(),
+            features: Vec::new(),
+            gpos_features: Vec::new(),
+            variant_sources: IndexMap::new(),
+            ligatures: Vec::new(),
         }
     }
 }
@@ -566,4 +576,106 @@ impl StrokeGlyphProvider {
         };
         Ok(Self { name, glyphs, cmap, metrics, source: folder.display().to_string(), notes })
     }
+}
+
+pub const BUILTIN_PREFIX: &str = "builtin:";
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FontPaths {
+    pub builtin_dir: std::path::PathBuf,
+    pub user_fonts_dir: std::path::PathBuf,
+}
+
+pub fn resolve_font_path(spec: &str, paths: &FontPaths) -> std::path::PathBuf {
+    if let Some(rest) = spec.strip_prefix(BUILTIN_PREFIX) {
+        return paths.builtin_dir.join(rest);
+    }
+    let expanded = match spec.strip_prefix("~") {
+        Some(rest) if rest.is_empty() || rest.starts_with('/') || rest.starts_with('\\') => {
+            let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).unwrap_or_default();
+            let mut p = std::path::PathBuf::from(home);
+            let rest = rest.trim_start_matches(['/', '\\']);
+            if !rest.is_empty() {
+                p.push(rest);
+            }
+            p
+        }
+        _ => std::path::PathBuf::from(spec),
+    };
+    if expanded.is_absolute() { expanded } else { paths.user_fonts_dir.join(expanded) }
+}
+
+fn mode_for_path(p: &Path) -> crate::settings::Mode {
+    let ext = p.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    if ext == "ttf" || ext == "otf" { crate::settings::Mode::Outlines } else { crate::settings::Mode::Strokes }
+}
+
+pub type SharedProvider = std::sync::Arc<dyn GlyphProvider + Send + Sync>;
+
+enum Loaded {
+    Strokes(std::sync::Arc<StrokeGlyphProvider>),
+    Outlines(crate::outline::OutlineGlyphProvider),
+}
+
+type CacheKey = (crate::settings::Mode, std::path::PathBuf, Option<std::time::SystemTime>);
+
+type ProviderCache = std::sync::Mutex<Vec<(CacheKey, std::sync::Arc<Loaded>)>>;
+
+static PROVIDER_CACHE: LazyLock<ProviderCache> = LazyLock::new(|| std::sync::Mutex::new(Vec::new()));
+
+fn stamp(p: &Path) -> Option<std::time::SystemTime> {
+    let own = fs::metadata(p).and_then(|m| m.modified()).ok();
+    if p.is_dir() {
+        let inner = fs::read_dir(p).ok()?.filter_map(|e| e.ok()?.metadata().ok()?.modified().ok()).max();
+        return own.max(inner);
+    }
+    own
+}
+
+pub fn load_provider(
+    spec: &str,
+    mode: crate::settings::Mode,
+    outline: &crate::settings::OutlineOptions,
+    paths: &FontPaths,
+) -> Result<SharedProvider, String> {
+    use crate::settings::Mode;
+    let path = resolve_font_path(spec, paths);
+    if !path.exists() {
+        return Err(format!("Шрифт не найден: {}", path.display()));
+    }
+    if mode_for_path(&path) != mode {
+        let need = if mode_for_path(&path) == Mode::Outlines { "«Контуры»" } else { "«Штрихи»" };
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        return Err(format!("Для шрифта {name} нужен режим {need}"));
+    }
+    let key: CacheKey = (mode, path.clone(), stamp(&path));
+    let mut cache = PROVIDER_CACHE.lock().expect("cache lock");
+    let loaded = match cache.iter().position(|(k, _)| *k == key) {
+        Some(i) => {
+            let entry = cache.remove(i);
+            let l = entry.1.clone();
+            cache.push(entry);
+            l
+        }
+        None => {
+            let l = std::sync::Arc::new(match mode {
+                Mode::Strokes => {
+                    Loaded::Strokes(std::sync::Arc::new(StrokeGlyphProvider::from_path(&path).map_err(|e| e.0)?))
+                }
+                Mode::Outlines => {
+                    Loaded::Outlines(crate::outline::OutlineGlyphProvider::from_path(&path).map_err(|e| e.0)?)
+                }
+            });
+            cache.push((key, l.clone()));
+            while cache.len() > 4 {
+                cache.remove(0);
+            }
+            l
+        }
+    };
+    drop(cache);
+    Ok(match &*loaded {
+        Loaded::Strokes(p) => p.clone(),
+        Loaded::Outlines(p) => std::sync::Arc::new(p.with_params(crate::skeleton::SkeletonParams::from(outline))),
+    })
 }

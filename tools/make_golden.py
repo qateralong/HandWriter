@@ -908,6 +908,96 @@ def placement_case() -> None:
     print(f"placement: {len(layouts)} layouts, {len(places)} placements")
 
 
+def plan_case() -> None:
+    import random
+
+    from handwriter.drawing import passes
+
+    rng = random.Random(29)
+    out = {"covered": [], "plans": [], "marked": [], "a3": []}
+
+    def rand_strokes():
+        st = []
+        for _ in range(rng.randint(0, 6)):
+            n = rng.randint(1, 5)
+            st.append([(rng.uniform(-20, 320), rng.uniform(-20, 440)) for _ in range(n)])
+        if rng.random() < 0.2:
+            st.append([(10.0, 10.0), (10.0, 10.0), (10.0, 50.0)])
+        return st
+
+    def rand_rect():
+        x0, y0 = rng.uniform(-30, 250), rng.uniform(-30, 350)
+        return (x0, y0, x0 + rng.uniform(0, 300), y0 + rng.uniform(0, 300))
+
+    for _ in range(300):
+        strokes = rand_strokes()
+        rects = [rand_rect() for _ in range(rng.randint(0, 4))]
+        if rng.random() < 0.3 and rects:
+            q = rects[0]
+            rects.append((q[2] - 1e-8, q[1], q[2] + 50.0, q[3]))
+        A, B = passes.segments(strokes)
+        out["covered"].append([strokes, rects, passes.covered_mask(A, B, rects).tolist(),
+                               passes.lines_covered(strokes, rects)])
+
+    for _ in range(120):
+        s = Settings()
+        pr = s.printer
+        if rng.random() < 0.85:
+            pr.travel = Travel(x_min=rng.uniform(-20, 0), x_max=rng.uniform(80, 300),
+                               y_min=rng.uniform(-20, 0), y_max=rng.uniform(80, 300))
+        pr.flip_x, pr.flip_y = rng.random() < 0.2, rng.random() < 0.2
+        pr.safety_margin = rng.choice([0.0, 2.0])
+        pr.table.overhang_x, pr.table.overhang_y = rng.random() < 0.5, rng.random() < 0.3
+        if rng.random() < 0.6:
+            pr.table.table_x, pr.table.table_y = rng.uniform(120, 320), rng.uniform(120, 320)
+        s = Settings.model_validate(s.model_dump())
+        W, H = rng.choice([(210.0, 297.0), (297.0, 210.0), (297.0, 420.0), (420.0, 297.0), (150.0, 100.0)])
+        target = rng.choice([(0.0, 0.0, W, H), (20.0, 5.0, W - 5.0, H - 5.0), (W / 3, H / 3, W / 2, H / 2)])
+        what = rng.choice(["лист", "чертёж в рабочем поле"])
+        pl = passes.plan_sheet(W, H, target, s.printer, what)
+        out["plans"].append({"printer": s.model_dump(mode="json")["printer"], "W": W, "H": H, "target": target,
+                             "what": what,
+                             "plan": {"allowed": pl.allowed, "rects": [[r, pl.rects[r]] for r in pl.allowed],
+                                      "rotations": pl.rotations, "uncovered": pl.uncovered, "message": pl.message,
+                                      "notes": pl.notes, "ok": pl.ok, "describe": pl.describe(),
+                                      "describe_all": pl.describe(pl.allowed)}})
+
+    for _ in range(60):
+        s = Settings()
+        mk = s.drawing.marked
+        if rng.random() < 0.7:
+            mk.x_min, mk.x_max = rng.uniform(-5, 30), rng.uniform(150, 240)
+            mk.y_min, mk.y_max = rng.uniform(-5, 30), rng.uniform(150, 260)
+        z = s.drawing.a3
+        if rng.random() < 0.7:
+            z.x_min, z.x_max = rng.uniform(-5, 30), rng.uniform(150, 260)
+            z.y_min, z.y_max = rng.uniform(-5, 30), rng.uniform(150, 260)
+        s = Settings.model_validate(s.model_dump())
+        mk, z = s.drawing.marked, s.drawing.a3
+        W, H = rng.choice([(210.0, 297.0), (297.0, 210.0), (120.0, 80.0)])
+        pts = [(rng.uniform(0, W), rng.uniform(0, H)) for _ in range(3)]
+        aff = {r: passes.marked_affine(mk, W, H, r) for r in (0, 180)}
+        out["marked"].append({"drawing": s.model_dump(mode="json")["drawing"], "W": W, "H": H,
+                              "affine": [[r, m, [passes.apply_affine(m, q) for q in pts],
+                                          [passes.invert_affine(m, q) for q in pts]] for r, m in aff.items()],
+                              "pts": pts, "rects": list(passes.marked_rects(mk, W, H))})
+        W3, H3 = rng.choice([(420.0, 297.0), (297.0, 420.0), (300.0, 200.0)])
+        aff3 = {r: passes.a3_affine(z, W3, H3, r) for r in passes.A3_RUNS}
+        allowed, rects, notes = passes.a3_rects(z, W3, H3)
+        out["a3"].append({"drawing": s.model_dump(mode="json")["drawing"], "W": W3, "H": H3,
+                          "affine": [[r, m, [passes.apply_affine(m, q) for q in pts]] for r, m in aff3.items()],
+                          "pts": pts, "rects": [allowed, [[r, rects[r]] for r in allowed], notes]})
+
+    for m in out["marked"]:
+        allowed, rects, notes = m["rects"]
+        m["rects"] = [allowed, [[r, rects[r]] for r in allowed], notes]
+    d = OUT / "plan"
+    shutil.rmtree(d, ignore_errors=True)
+    d.mkdir(parents=True)
+    (d / "cases.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
+    print(f"plan: {len(out['covered'])} coverage, {len(out['plans'])} plans")
+
+
 def main() -> None:
     os.environ["HANDWRITER_HOME"] = tempfile.mkdtemp(prefix="hw-golden-")
     OUT.mkdir(parents=True, exist_ok=True)
@@ -917,6 +1007,7 @@ def main() -> None:
     text_case()
     drawing_import_case()
     placement_case()
+    plan_case()
     shutil.copy(TEST_FONTS / "BadScript-Regular.ttf", user_fonts_dir())
 
     save_case("text_default", text_settings(), text_run)

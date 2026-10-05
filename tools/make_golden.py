@@ -17,7 +17,7 @@ from handwriter.drawing.pipeline import compose_drawing, make_all_files
 from handwriter.drawing.sources import clear_cache
 from handwriter.paths import user_drawings_dir, user_fonts_dir
 from handwriter.pipeline import compose, make_gcode, make_test_gcode
-from handwriter.settings import Settings, Travel, default_profiles
+from handwriter.settings import MissingChoice, Settings, Travel, default_profiles
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "tests" / "golden"
@@ -498,12 +498,150 @@ def svg_fonts_case() -> None:
     print(f"svg_fonts: {len(fonts)} fonts, {len(paths)} paths")
 
 
+HYPHEN_WORDS = [
+    "электрификация", "губерний", "сельского", "хозяйства", "французских", "подъёму", "Съешь", "СЪЕШЬ",
+    "по-русски", "кое-что", "ёлка", "йод", "ай", "пятисотпятидесятитысячный", "Hyphenation", "computer",
+    "programming", "extraordinary", "mother-in-law", "a", "ab", "abcd", "rhythm", "naïve", "İstanbul",
+    "достопримечательность", "противоестественный", "за́мок", "x²yz", "word_with_under", "mixedРусскийEnglish",
+    "12345", "абв123где", "ΣΑΣ", "straße", "­софт", "три­ста",
+]
+
+TEXTS = {
+    "sample": None,
+    "long_words": "\tПятисотпятидесятитысячный достопримечательность противоестественный электрификация. "
+                  "Кое-что по-русски, mother-in-law extraordinary programming.\n\n\n\tАбзац после двух пустых.",
+    "soft_and_tabs": "  \t Три\u00adста\u00adшестьдесят пять дней\t\tв году.\r\nВторая строка\rтретья — «кавычки» … "
+                     "\u00a0неразрывный.\n\t\n\t\tОтступ: x² ×y.",
+    "missing": "Буквы ⌘ и ☃ и ⌘ и \U0001F600 — нет в шрифте; № и ° есть. За́мок й",
+    "numbers": "1234567890 3,14 15:00 (скобки) [квадратные] {фигурные} @#$%^&*+=<>/\\|~`!?;'\"",
+    "empty": "   \n\t\n",
+    "one_long": "Пятисотпятидесятитысячныйпятисотпятидесятитысячныйпятисотпятидесятитысячный",
+}
+
+
+def text_settings_variants() -> list:
+    out = []
+
+    def add(name, text_key, **mut):
+        s = Settings()
+        s.printer.travel = Travel(x_min=-2, x_max=200, y_min=-2, y_max=230)
+        if TEXTS[text_key] is not None:
+            s.text = TEXTS[text_key]
+        for path, v in mut.items():
+            obj = s
+            parts = path.split("__")
+            for k in parts[:-1]:
+                obj = getattr(obj, k)
+            setattr(obj, parts[-1], v)
+        s = Settings.model_validate(s.model_dump())
+        out.append((name, s))
+
+    add("sample_default", "sample")
+    add("sample_plain", "sample", randomness__enabled=False, connections__enabled=False)
+    add("sample_no_hyphen", "sample", typography__hyphenate=False, randomness__seed=7)
+    add("sample_jitter_only", "sample", randomness__drift=0.0, randomness__jitter=0.6, randomness__variants=False)
+    add("sample_drift_only", "sample", randomness__jitter=0.0, randomness__drift=2.0, randomness__size=0.0)
+    add("long_words_narrow", "long_words", sheet__width=70.0, sheet__margin_left=5.0, sheet__margin_right=5.0,
+        typography__size_mm=4.0, sheet__line_pitch=12.0)
+    add("long_words_wide", "long_words", sheet__width=200.0, typography__size_mm=2.5, sheet__line_pitch=8.0,
+        connections__distance=0.6)
+    add("soft_and_tabs", "soft_and_tabs", typography__rotation_deg=-2.0, typography__baseline_shift=0.4,
+        sheet__indent=15.0, typography__dx=1.5, typography__dy=-0.5)
+    add("missing_unresolved", "missing")
+    add("missing_resolved", "missing", text_options__missing={
+        "⌘": MissingChoice(action="skip"), "☃": MissingChoice(action="replace", replacement="сне\u0301г"),
+        "\U0001F600": MissingChoice(action="replace", replacement=":)"), "\u0301": MissingChoice(action="skip"),
+        "№": MissingChoice(action="replace", replacement="N")})
+    add("soft_and_tabs_resolved", "soft_and_tabs", text_options__missing={
+        "²": MissingChoice(action="replace", replacement="2"), "×": MissingChoice(action="skip")})
+    add("numbers_resolved", "numbers", text_options__missing={
+        "^": MissingChoice(action="skip"), "`": MissingChoice(action="replace", replacement="'")})
+    add("numbers", "numbers", randomness__seed=123456789)
+    add("empty", "empty")
+    add("one_long", "one_long", sheet__width=60.0, sheet__margin_left=5.0, sheet__margin_right=5.0)
+    add("one_long_too_narrow", "one_long", sheet__width=12.0, sheet__margin_left=5.0, sheet__margin_right=5.0,
+        sheet__indent=0.0, typography__size_mm=5.0, sheet__line_pitch=14.0)
+    add("start_word", "sample", text_options__start_word=9)
+    add("start_word_past_end", "sample", text_options__start_word=999)
+    add("resume_mid", "sample", text_options__resume_word=5, text_options__resume_letter=3)
+    add("resume_missing_word", "sample", text_options__resume_word=500)
+    add("resume_missing_letter", "sample", text_options__resume_word=2, text_options__resume_letter=40)
+    add("overflow", "long_words", sheet__height=40.0, sheet__first_line_top=10.0, sheet__bottom_limit=5.0)
+    add("blank_first", "long_words", text="\n\n\tПосле пустых строк в начале. " * 3)
+    add("no_lines", "sample", sheet__height=20.0, sheet__first_line_top=15.0, sheet__bottom_limit=10.0)
+    add("sheet_error", "sample", sheet__margin_left=100.0, sheet__margin_right=100.0)
+    add("out_of_bounds", "sample", printer__travel=Travel(x_min=-2, x_max=50, y_min=-2, y_max=230))
+    add("flip_x", "sample", printer__flip_x=True,
+        printer__travel=Travel(x_min=-200, x_max=2, y_min=-2, y_max=230))
+    add("big_letters_warning", "sample", typography__size_mm=5.0)
+    add("zero_pitch", "sample", sheet__line_pitch=0.0)
+    return out
+
+
+def text_case() -> None:
+    from handwriter.glyphs import load_provider
+    from handwriter.layout import layout
+    from handwriter.pipeline import GenerationRefused, find_resume
+    from handwriter.text import _dictionary, break_positions, process_text
+
+    prov = load_provider("builtin:hershey_cyrillic.svg")
+    hyph = []
+    for w in HYPHEN_WORDS:
+        hyph.append([w, list(_dictionary("ru_RU").positions(w)), list(_dictionary("en_US").positions(w))])
+
+    def dump_text(pt):
+        return {
+            "paragraphs": [{"index": p.index, "indent": p.indent, "blank_before": p.blank_before,
+                            "words": [w.index for w in p.words]} for p in pt.paragraphs],
+            "words": [{"index": w.index, "text": w.text, "paragraph": w.paragraph, "text_line": w.text_line,
+                       "soft_breaks": sorted(w.soft_breaks), "breaks": [[k, v] for k, v in break_positions(w, True).items()],
+                       "breaks_manual": [[k, v] for k, v in break_positions(w, False).items()]} for w in pt.words],
+            "missing": [{"char": m.char, "count": m.count, "positions": m.positions} for m in pt.missing],
+            "skipped": sorted(pt.skipped), "unresolved": sorted(pt.unresolved), "replaced": pt.replaced,
+        }
+
+    cases = []
+    for name, s in text_settings_variants():
+        pt = process_text(s.text, prov.has_char, s.text_options.replacements, s.text_options.missing)
+        c = compose(s, prov)
+        lay = c.layout
+        entry = {"name": name, "settings": s.model_dump(mode="json"), "text": dump_text(pt),
+                 "errors": c.errors, "warnings": c.warnings}
+        if lay is not None:
+            entry["layout"] = {
+                "glyphs": [g.__dict__ for g in lay.glyphs], "baselines": lay.baselines, "used_lines": lay.used_lines,
+                "scale": lay.scale, "first_word": lay.first_word, "last_word": lay.last_word,
+                "last_letter": lay.last_letter, "next_word": lay.next_word, "next_letter": lay.next_letter,
+                "warnings": lay.warnings, "errors": lay.errors,
+                "strokes": [{"points": st.points, "tags": st.tags, "word": st.word, "letter": st.letter,
+                             "line": st.line, "hyphen": st.hyphen} for st in lay.strokes],
+            }
+        if c.resume is not None:
+            entry["resume"] = c.resume.__dict__
+        try:
+            entry["gcode"] = make_gcode(c)
+        except GenerationRefused as e:
+            entry["refused"] = e.errors
+        try:
+            entry["test_gcode"] = make_test_gcode(s)[0]
+        except GenerationRefused as e:
+            entry["test_refused"] = e.errors
+        cases.append(entry)
+    d = OUT / "text"
+    shutil.rmtree(d, ignore_errors=True)
+    d.mkdir(parents=True)
+    (d / "cases.json").write_text(json.dumps({"hyphenation": hyph, "cases": cases}, ensure_ascii=False),
+                                  encoding="utf-8")
+    print(f"text: {len(cases)} cases, {len(hyph)} hyphenation words")
+
+
 def main() -> None:
     os.environ["HANDWRITER_HOME"] = tempfile.mkdtemp(prefix="hw-golden-")
     OUT.mkdir(parents=True, exist_ok=True)
     numeric_case()
     conformance_case()
     svg_fonts_case()
+    text_case()
     shutil.copy(TEST_FONTS / "BadScript-Regular.ttf", user_fonts_dir())
 
     save_case("text_default", text_settings(), text_run)

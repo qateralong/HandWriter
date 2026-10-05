@@ -1,5 +1,6 @@
 use crate::checks::{to_machine, travel_box};
-use crate::geometry::{Point, polyline_length};
+use crate::geometry::{Point, make_transform, polyline_length};
+use crate::layout::line_baselines;
 use crate::numeric;
 use crate::settings::Settings;
 
@@ -159,6 +160,30 @@ pub fn generate_gcode(strokes: &[Vec<Point>], s: &Settings, header: &[String], i
     lines.push("M400".into());
     let mut out = lines.join("\n");
     out.push('\n');
+    out
+}
+
+pub fn test_pattern(s: &Settings) -> Vec<Vec<Point>> {
+    let (sh, ty) = (&s.sheet, &s.typography);
+    let t = make_transform(ty.rotation_deg, ty.dx, ty.dy);
+    let (x0, x1) = (sh.margin_left, sh.width - sh.margin_right);
+    let bases = line_baselines(s);
+    let y_top = sh.height - sh.first_line_top;
+    let y_bot = bases.last().copied().unwrap_or(sh.bottom_limit);
+    let rect = [(x0, y_bot), (x1, y_bot), (x1, y_top), (x0, y_top), (x0, y_bot)];
+    let mut out = vec![rect.iter().map(|&p| t(p)).collect::<Vec<_>>()];
+    if bases.len() > 2 {
+        for b in &bases[1..bases.len() - 1] {
+            let y = b + ty.baseline_shift;
+            out.push(vec![t((x0, y)), t((x0 + 3.0, y))]);
+        }
+    }
+    let o = s.printer.test_mark_offset;
+    let (ax, ay, head) = (40.0, 20.0, 3.0);
+    out.push(vec![(o, o), (o + ax, o)]);
+    out.push(vec![(o + ax - head, o + head * 0.6), (o + ax, o), (o + ax - head, o - head * 0.6)]);
+    out.push(vec![(o, o), (o, o + ay)]);
+    out.push(vec![(o - head * 0.6, o + ay - head), (o, o + ay), (o + head * 0.6, o + ay - head)]);
     out
 }
 

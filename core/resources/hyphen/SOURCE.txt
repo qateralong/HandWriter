@@ -1,0 +1,3 @@
+Hyphenation patterns copied unchanged from pyphen 0.18.1 (https://github.com/Kozea/Pyphen), the same files HandWriter 1.x uses.
+hyph_en_US.dic: see README_hyph_en_US.txt.
+hyph_ru_RU.dic: from the LibreOffice/Hunspell hyphenation dictionaries distributed with pyphen.

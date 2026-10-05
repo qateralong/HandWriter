@@ -12,4 +12,5 @@ regex = "1.13.1"
 roxmltree = "0.21.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
+unicode-general-category = "1.1.0"
 unicode-normalization = "0.1.25"

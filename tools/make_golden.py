@@ -1050,6 +1050,92 @@ def split_geometry_case() -> None:
     print(f"split geometry: {len(cases)} cases")
 
 
+def dump_node(n):
+    if n is None:
+        return None
+    return {"core": n.core, "ext": n.ext, "rotation": n.rotation, "axis": n.axis, "s": n.s, "cost": n.cost,
+            "low": dump_node(n.low), "high": dump_node(n.high)}
+
+
+def split_case() -> None:
+    import random
+
+    import numpy as np
+
+    from handwriter.drawing import passes, split
+
+    rng = random.Random(37)
+    cases = []
+    tries = 0
+    while len(cases) < 40 and tries < 400:
+        tries += 1
+        s = Settings()
+        pr = s.printer
+        pr.travel = Travel(x_min=rng.uniform(-5, 0), x_max=rng.uniform(150, 260),
+                           y_min=rng.uniform(-5, 0), y_max=rng.uniform(150, 260))
+        pr.safety_margin = rng.choice([0.0, 2.0])
+        pr.table.overhang_x, pr.table.overhang_y = True, rng.random() < 0.5
+        s = Settings.model_validate(s.model_dump())
+        W, H = rng.choice([(297.0, 210.0), (210.0, 297.0), (420.0, 297.0), (297.0, 420.0)])
+        allowed, rects, _ = passes.rotation_rects(W, H, s.printer)
+        if len(allowed) < 2:
+            continue
+        strokes = []
+        for _ in range(rng.randint(1, 25)):
+            if rng.random() < 0.25:
+                cx, cy, r = rng.uniform(20, W - 20), rng.uniform(20, H - 20), rng.uniform(2, 30)
+                n = rng.randint(12, 48)
+                st = [(float(cx + r * np.cos(2 * np.pi * k / n)), float(cy + r * np.sin(2 * np.pi * k / n))) for k in range(n)]
+                st.append(st[0])
+            elif rng.random() < 0.1:
+                st = [(rng.uniform(5, W - 5), rng.uniform(5, H - 5))]
+            else:
+                st = [(rng.uniform(5, W - 5), rng.uniform(5, H - 5)) for _ in range(rng.randint(2, 5))]
+            strokes.append(st)
+        A, B = passes.segments(strokes)
+        if not passes.covered_mask(A, B, [rects[r] for r in allowed]).all():
+            continue
+        geo = split.Geometry(strokes)
+        sheet = (0.0, 0.0, W, H)
+        ov, slack = rng.choice([0.5, 1.0]), rng.choice([0.0, 1.0])
+        root = split.solve(geo, rects, list(allowed), sheet, sheet, ov + slack, ov)
+        entry = {"W": W, "H": H, "allowed": allowed, "rects": [[r, rects[r]] for r in allowed], "strokes": strokes,
+                 "ov": ov, "margin": ov + slack, "root": dump_node(root)}
+        if root is not None:
+            stats = split.CutStats()
+            entry["cuts"] = [[[rot, piece] for rot, piece in split.cut_stroke(st, root, ov, stats)] for st in strokes]
+            entry["stats"] = stats.__dict__
+            size, count = rng.choice([3.0, 5.0]), rng.choice([1, 3])
+            marks = split.control_marks(root, geo, rects, size, count)
+            entry["mark_size"], entry["mark_count"] = size, count
+            entry["marks"] = [[m.x, m.y, list(m.passes), split.mark_strokes(m, size)] for m in marks]
+        cases.append(entry)
+    extract = []
+    for _ in range(100):
+        n = rng.randint(2, 8)
+        pts = [(rng.uniform(0, 50), rng.uniform(0, 50)) for _ in range(n)]
+        closed = rng.random() < 0.5 and n > 2
+        if closed:
+            pts.append(pts[0])
+        cum = split._cum(pts)
+        L = cum[-1]
+        a = rng.uniform(-L, L)
+        b = a + rng.uniform(0, 1.5 * L)
+        axis, sv = rng.randint(0, 1), rng.uniform(0, 50)
+        extract.append([pts, closed, a, b, cum, split._extract(pts, cum, a, b, closed),
+                        split._point_at(pts, cum, a), axis, sv, split._crossings(pts, cum, axis, sv)])
+    bis = []
+    for lo, hi, thr, want in [(0.0, 10.0, 3.3, True), (0.0, 10.0, 3.3, False), (0.0, 10.0, -1.0, True),
+                              (0.0, 10.0, 11.0, False), (2.5, 2.5, 2.5, True), (0.0, 100.0, 99.999, True)]:
+        f = (lambda s, thr=thr: s <= thr) if want else (lambda s, thr=thr: s >= thr)
+        bis.append([lo, hi, thr, want, split._bisect(f, lo, hi, want)])
+    d = OUT / "split"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "split.json").write_text(json.dumps({"cases": cases, "extract": extract, "bisect": bis}, allow_nan=False),
+                                  encoding="utf-8")
+    print(f"split: {len(cases)} cases, {sum(1 for c in cases if c['root'])} solved")
+
+
 def main() -> None:
     os.environ["HANDWRITER_HOME"] = tempfile.mkdtemp(prefix="hw-golden-")
     OUT.mkdir(parents=True, exist_ok=True)
@@ -1061,6 +1147,7 @@ def main() -> None:
     placement_case()
     plan_case()
     split_geometry_case()
+    split_case()
     shutil.copy(TEST_FONTS / "BadScript-Regular.ttf", user_fonts_dir())
 
     save_case("text_default", text_settings(), text_run)

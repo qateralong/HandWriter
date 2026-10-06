@@ -21,7 +21,7 @@ jobs:
       - name: Build
         run: cargo build --release -p handwriter
       - name: Tests
-        run: cargo test --release --workspace
+        run: cargo test --release --workspace --no-fail-fast
       - name: Self-test
         shell: pwsh
         run: |

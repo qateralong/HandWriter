@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -16,7 +17,7 @@ from handwriter import gcode as gcode_mod
 from handwriter.drawing.pipeline import compose_drawing, make_all_files
 from handwriter.drawing.sources import clear_cache
 from handwriter.paths import user_drawings_dir, user_fonts_dir
-from handwriter.pipeline import compose, make_gcode, make_test_gcode
+from handwriter.pipeline import compose, make_gcode, make_test_gcode, preview_payload
 from handwriter.settings import MissingChoice, Settings, Travel, default_profiles
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -626,6 +627,7 @@ def text_case() -> None:
             entry["test_gcode"] = make_test_gcode(s)[0]
         except GenerationRefused as e:
             entry["test_refused"] = e.errors
+        entry["preview"] = preview_payload(c)
         cases.append(entry)
     d = OUT / "text"
     shutil.rmtree(d, ignore_errors=True)
@@ -2033,6 +2035,35 @@ def pdf_case() -> None:
     print(f"pdf: {len(imports)} imports")
 
 
+def i18n_case() -> None:
+    from handwriter import i18n
+    from handwriter.paths import STATIC_DIR
+
+    d = OUT / "i18n"
+    shutil.rmtree(d, ignore_errors=True)
+    d.mkdir(parents=True)
+    texts = []
+    for f in sorted(STATIC_DIR.iterdir()):
+        if f.suffix in (".html", ".js"):
+            texts.append(f.read_text(encoding="utf-8"))
+    table = json.loads((i18n.LOCALE_DIR / "en.json").read_text(encoding="utf-8"))
+    texts += list(table)
+    for case in ("text", "drawing_import", "drawing_pipeline", "dxf", "pdf", "plan"):
+        p = OUT / case / "cases.json"
+        if p.exists():
+            raw = p.read_text(encoding="utf-8")
+            texts += sorted(set(re.findall(r'"((?:[^"\\]|\\.)*[Ѐ-ӿ](?:[^"\\]|\\.)*)"', raw)))[:3000]
+    texts += ["Рамка ГОСТ", "Лист А4 альбомный", "нет", "Нетто", "Миннет", "x мм", "мм2", "Проход 3 из 5"]
+    i18n.set_lang("en")
+    out = {"tr": [[t, i18n.tr(t)] for t in texts], "static": [[t, i18n.tr_static(t)] for t in texts[:12]]}
+    sample = {"errors": ["Нет шрифта"], "warnings": ["Мелкие"], "detail": "Не найдено: /x", "label": "Встроенный: шрифт",
+              "text": "не переводить", "nested": [{"notes": ["нет"], "name": "Имя"}]}
+    out["json"] = [sample, i18n.tr_json(sample)]
+    i18n.set_lang("ru")
+    (d / "cases.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
+    print(f"i18n: {len(out['tr'])} strings")
+
+
 def main() -> None:
     os.environ["HANDWRITER_HOME"] = tempfile.mkdtemp(prefix="hw-golden-")
     OUT.mkdir(parents=True, exist_ok=True)
@@ -2052,6 +2083,7 @@ def main() -> None:
     outline_font_case()
     dxf_case()
     pdf_case()
+    i18n_case()
     shutil.copy(TEST_FONTS / "BadScript-Regular.ttf", user_fonts_dir())
 
     save_case("text_default", text_settings(), text_run)

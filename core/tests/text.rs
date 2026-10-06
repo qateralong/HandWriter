@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use handwriter_core::glyphs::StrokeGlyphProvider;
 use handwriter_core::hyphen::{ENGLISH, RUSSIAN};
 use handwriter_core::layout::LayoutResult;
-use handwriter_core::pipeline::{compose, make_gcode, make_test_gcode};
+use handwriter_core::pipeline::{compose, make_gcode, make_test_gcode, preview_payload};
 use handwriter_core::settings::Settings;
 use handwriter_core::text::{ProcessedText, break_positions};
 use serde_json::{Value, json};
@@ -128,6 +128,7 @@ fn text_pipeline_matches_python() {
             Ok(g) => check("gcode", json!(g), case.get("gcode").unwrap_or(&Value::Null)),
             Err(e) => check("refused", json!(e), case.get("refused").unwrap_or(&Value::Null)),
         }
+        check("preview", preview_payload(&c, Some(&prov)), &case["preview"]);
         match make_test_gcode(&s) {
             Ok((g, _)) => check("test_gcode", json!(g), case.get("test_gcode").unwrap_or(&Value::Null)),
             Err(e) => check("test_refused", json!(e), case.get("test_refused").unwrap_or(&Value::Null)),

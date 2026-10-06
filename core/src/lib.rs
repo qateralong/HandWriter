@@ -6,6 +6,7 @@ pub mod gcode;
 pub mod geometry;
 pub mod glyphs;
 pub mod hyphen;
+pub mod i18n;
 pub mod layout;
 pub mod numeric;
 pub mod outline;

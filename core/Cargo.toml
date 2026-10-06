@@ -19,4 +19,5 @@ rustybuzz = "0.20.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
 unicode-general-category = "1.1.0"
+unicode_names2 = "4"
 unicode-normalization = "0.1.25"

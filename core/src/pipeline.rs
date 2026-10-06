@@ -240,3 +240,134 @@ pub fn compose_with_font(s: &Settings, paths: &crate::glyphs::FontPaths) -> Comp
         Err(e) => compose_without_font(s, &e),
     }
 }
+
+fn r3(v: f64) -> f64 {
+    crate::numeric::round_to(v, 3)
+}
+
+fn r2p(p: &Point) -> serde_json::Value {
+    serde_json::json!([r3(p.0), r3(p.1)])
+}
+
+pub fn char_name(c: char) -> String {
+    unicode_names2::name(c).map_or_else(|| "?".to_string(), |n| n.to_string())
+}
+
+pub fn preview_payload(c: &Composition, prov: Option<&dyn GlyphProvider>) -> serde_json::Value {
+    use serde_json::{Value, json};
+    let s = &c.settings;
+    let bx = crate::checks::travel_box(s);
+    let strokes = c.strokes();
+    let mut out = serde_json::Map::new();
+    out.insert("errors".into(), json!(c.errors));
+    out.insert("warnings".into(), json!(c.warnings));
+    out.insert("sheet".into(), serde_json::to_value(&s.sheet).expect("sheet"));
+    out.insert(
+        "travel_box".into(),
+        json!({"x_min": bx.x_min, "x_max": bx.x_max, "y_min": bx.y_min, "y_max": bx.y_max, "measured": bx.measured}),
+    );
+    out.insert("flip_x".into(), json!(s.printer.flip_x));
+    out.insert("flip_y".into(), json!(s.printer.flip_y));
+    out.insert("safety_margin".into(), json!(s.printer.safety_margin));
+    for k in ["strokes", "travel", "glyphs", "baselines"] {
+        out.insert(k.into(), json!([]));
+    }
+    out.insert("stats".into(), crate::gcode::compute_stats(&strokes, s).as_json());
+    out.insert("missing".into(), json!([]));
+    for k in ["font", "end", "resume"] {
+        out.insert(k.into(), Value::Null);
+    }
+    if let Some(p) = prov {
+        let info = p.info();
+        let m = info.metrics.as_ref();
+        out.insert(
+            "font".into(),
+            json!({
+                "name": info.name, "mode": info.mode, "glyph_count": info.glyph_count, "chars": info.chars,
+                "variants": info.variants, "notes": info.notes,
+                "x_height": m.map(|m| m.x_height), "x_height_source": m.map_or("", |m| m.x_height_source.as_str()),
+                "features": info.features, "gpos_features": info.gpos_features,
+                "variant_sources": info.variant_sources,
+                "ligatures": info.ligatures.iter().map(|(a, b, c)| json!([a, b, c])).collect::<Vec<_>>(),
+            }),
+        );
+    }
+    if let Some(t) = &c.text {
+        let missing: Vec<Value> = t
+            .missing
+            .iter()
+            .map(|mc| {
+                json!({
+                    "char": mc.ch.to_string(), "code": mc.code(), "name": char_name(mc.ch), "count": mc.count,
+                    "positions": mc.positions.iter()
+                        .map(|p| json!({"line": p.line, "word": p.word, "letter": p.letter}))
+                        .collect::<Vec<_>>(),
+                    "resolved": !t.unresolved.contains(&mc.ch),
+                })
+            })
+            .collect();
+        out.insert("missing".into(), json!(missing));
+        let replaced: serde_json::Map<String, Value> =
+            t.replaced.iter().map(|(k, v)| (k.to_string(), json!(v))).collect();
+        out.insert("replaced".into(), Value::Object(replaced));
+        out.insert("word_count".into(), json!(t.words.len()));
+    }
+    if let Some(lay) = &c.layout {
+        let r = c.resume.as_ref();
+        let item = |st: &crate::layout::DrawnStroke, pts: &[Point], done: bool| {
+            json!({"p": pts.iter().map(r2p).collect::<Vec<_>>(), "w": st.word, "l": st.letter, "n": st.line,
+                   "h": st.hyphen, "d": done})
+        };
+        let mut items = Vec::new();
+        for (pi, st) in lay.strokes.iter().enumerate() {
+            match r {
+                Some(r) if pi == r.path => {
+                    if r.point > 0 {
+                        items.push(item(st, &st.points[..=r.point], true));
+                    }
+                    items.push(item(st, &st.points[r.point..], false));
+                }
+                Some(r) if pi < r.path => items.push(item(st, &st.points, true)),
+                _ => items.push(item(st, &st.points, false)),
+            }
+        }
+        out.insert("strokes".into(), json!(items));
+        let travel: Vec<Value> =
+            crate::gcode::travel_moves(&strokes).iter().map(|(a, b)| json!([r2p(a), r2p(b)])).collect();
+        out.insert("travel".into(), json!(travel));
+        let mut boxes: std::collections::HashMap<usize, [f64; 4]> = std::collections::HashMap::new();
+        for st in &lay.strokes {
+            for (&(x, y), &t) in st.points.iter().zip(&st.tags) {
+                let b = boxes.entry(t).or_insert([x, y, x, y]);
+                *b = [
+                    crate::numeric::min(b[0], x),
+                    crate::numeric::min(b[1], y),
+                    crate::numeric::max(b[2], x),
+                    crate::numeric::max(b[3], y),
+                ];
+            }
+        }
+        let glyphs: Vec<Value> = lay
+            .glyphs
+            .iter()
+            .enumerate()
+            .map(|(i, g)| {
+                json!({"w": g.word, "l": g.letter, "n": g.line, "c": g.ch.to_string(), "x": r3(g.x), "y": r3(g.y),
+                       "adv": r3(g.advance), "missing": g.missing, "h": g.hyphen,
+                       "b": boxes.get(&i).map(|b| b.iter().map(|v| r3(*v)).collect::<Vec<_>>())})
+            })
+            .collect();
+        out.insert("glyphs".into(), json!(glyphs));
+        out.insert("baselines".into(), json!(lay.baselines));
+        out.insert("scale".into(), json!(lay.scale));
+        out.insert(
+            "end".into(),
+            json!({"first_word": lay.first_word, "last_word": lay.last_word, "last_letter": lay.last_letter,
+                   "next_word": lay.next_word, "next_letter": lay.next_letter}),
+        );
+        if let Some(r) = r {
+            out.insert("resume".into(), json!({"word": r.word, "letter": r.letter, "connected": r.connected}));
+        }
+    }
+    Value::Object(out)
+}

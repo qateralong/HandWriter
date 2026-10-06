@@ -1,4 +1,8 @@
 use std::fs;
+use std::sync::Mutex;
+
+use blake2::Blake2bVar;
+use blake2::digest::{Update, VariableOutput};
 use std::path::Path;
 
 use crate::drawing::model::ImportResult;
@@ -32,36 +36,109 @@ pub fn file_kind(name: &str) -> Option<&'static str> {
     })
 }
 
-pub fn load_drawing(spec: &str, imp: &DrawingImport, tol_mm: f64, drawings_dir: &Path) -> ImportResult {
-    if spec == BUILTIN_TEST {
-        let mut res = import_svg(TEST_SVG.as_bytes(), "Тестовый чертёж", imp, tol_mm);
-        res.kind = "test".into();
-        return res;
+pub struct DrawingFile {
+    pub spec: String,
+    pub label: String,
+    pub kind: String,
+}
+
+pub fn list_files(drawings_dir: &Path) -> Vec<DrawingFile> {
+    let mut out =
+        vec![DrawingFile {
+            spec: BUILTIN_TEST.into(), label: "Встроенный тестовый чертёж".into(), kind: "svg".into()
+        }];
+    let mut names: Vec<String> = fs::read_dir(drawings_dir)
+        .map(|rd| {
+            rd.flatten().filter(|e| e.path().is_file()).map(|e| e.file_name().to_string_lossy().into_owned()).collect()
+        })
+        .unwrap_or_default();
+    names.sort();
+    for n in names {
+        if let Some(k) = file_kind(&n) {
+            out.push(DrawingFile { spec: n.clone(), label: n, kind: k.into() });
+        }
     }
-    let file_name = Path::new(spec).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let path = drawings_dir.join(&file_name);
-    let Some(kind) = file_kind(&file_name) else {
-        let mut res = ImportResult::new("?", &file_name);
-        res.errors.push(format!("Неизвестный тип файла: {file_name}"));
-        return res;
+    out
+}
+
+fn import_key(kind: &str, imp: &DrawingImport) -> String {
+    if kind == "raster" {
+        return format!(
+            "{:?}",
+            (
+                imp.threshold_auto,
+                (!imp.threshold_auto).then_some(imp.threshold),
+                imp.invert,
+                imp.raster_dpi.to_bits(),
+                imp.raster_mode
+            )
+        );
+    }
+    let common = (imp.fill_centerlines, imp.fill_centerlines.then_some(imp.fill_centerline_max.to_bits()));
+    if kind == "pdf" { format!("{:?}", (imp.pdf_page, common)) } else { format!("{:?}", (imp.units, common)) }
+}
+
+const CACHE_SIZE: usize = 8;
+
+static CACHE: Mutex<Vec<(String, ImportResult)>> = Mutex::new(Vec::new());
+
+pub fn clear_cache() {
+    CACHE.lock().expect("cache lock").clear();
+}
+
+fn import(kind: &str, data: &[u8], name: &str, imp: &DrawingImport, tol_mm: f64) -> ImportResult {
+    match kind {
+        "svg" => import_svg(data, name, imp, tol_mm),
+        "pdf" => crate::drawing::pdf_import::import_pdf(data, name, imp, tol_mm),
+        "dxf" => crate::dxf::import_dxf(data, name, imp, tol_mm),
+        _ => crate::drawing::raster_import::import_raster(data, name, imp),
+    }
+}
+
+pub fn load_drawing(spec: &str, imp: &DrawingImport, tol_mm: f64, drawings_dir: &Path) -> ImportResult {
+    let (data, name, kind): (Vec<u8>, String, &str) = if spec == BUILTIN_TEST {
+        (TEST_SVG.as_bytes().to_vec(), crate::i18n::tr("Тестовый чертёж"), "svg")
+    } else {
+        let file_name = Path::new(spec).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let path = drawings_dir.join(&file_name);
+        let Some(kind) = file_kind(&file_name) else {
+            let mut res = ImportResult::new("?", &file_name);
+            res.errors.push(format!("Неизвестный тип файла: {file_name}"));
+            return res;
+        };
+        match fs::read(&path) {
+            Ok(d) => (d, file_name, kind),
+            Err(_) => {
+                let mut res = ImportResult::new(kind, &file_name);
+                res.errors.push(format!("Файл чертежа не найден: {file_name}"));
+                return res;
+            }
+        }
     };
-    let data = match fs::read(&path) {
-        Ok(d) => d,
-        Err(_) => {
-            let mut res = ImportResult::new(kind, &file_name);
-            res.errors.push(format!("Файл чертежа не найден: {file_name}"));
+    let mut h = Blake2bVar::new(16).expect("digest size");
+    h.update(&data);
+    let mut digest = [0u8; 16];
+    h.finalize_variable(&mut digest).expect("digest");
+    let tol_key =
+        if kind == "raster" { "None".to_string() } else { crate::numeric::repr(crate::numeric::round_to(tol_mm, 6)) };
+    let key = format!("{digest:?}|{kind}|{}|{tol_key}", import_key(kind, imp));
+    {
+        let mut cache = CACHE.lock().expect("cache lock");
+        if let Some(i) = cache.iter().position(|(k, _)| *k == key) {
+            let item = cache.remove(i);
+            let res = item.1.clone();
+            cache.push(item);
             return res;
         }
-    };
-    match kind {
-        "svg" => import_svg(&data, &file_name, imp, tol_mm),
-        "pdf" => crate::drawing::pdf_import::import_pdf(&data, &file_name, imp, tol_mm),
-        "dxf" => crate::dxf::import_dxf(&data, &file_name, imp, tol_mm),
-        "raster" => crate::drawing::raster_import::import_raster(&data, &file_name, imp),
-        _ => {
-            let mut res = ImportResult::new(kind, &file_name);
-            res.errors.push(format!("Импорт {kind} ещё не перенесён в версию 2.0"));
-            res
-        }
     }
+    let mut res = import(kind, &data, &name, imp, tol_mm);
+    if spec == BUILTIN_TEST {
+        res.kind = "test".into();
+    }
+    let mut cache = CACHE.lock().expect("cache lock");
+    cache.push((key, res.clone()));
+    while cache.len() > CACHE_SIZE {
+        cache.remove(0);
+    }
+    res
 }

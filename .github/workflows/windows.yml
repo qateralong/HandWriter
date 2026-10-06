@@ -3,7 +3,7 @@ name: Windows build
 on:
   workflow_dispatch:
   push:
-    branches: [rust-port]
+    tags: ['v*']
 
 jobs:
   build:

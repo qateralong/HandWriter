@@ -185,7 +185,7 @@ struct Ctx<'a, 'input> {
     fills_small: usize,
 }
 
-fn units_key(u: Units) -> &'static str {
+pub(crate) fn units_key(u: Units) -> &'static str {
     match u {
         Units::Auto => "auto",
         Units::Mm => "mm",

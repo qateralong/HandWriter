@@ -1,6 +1,7 @@
 pub mod calibration;
 pub mod checks;
 pub mod drawing;
+pub mod dxf;
 pub mod gcode;
 pub mod geometry;
 pub mod glyphs;

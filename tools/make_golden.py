@@ -1543,6 +1543,338 @@ def outline_font_case() -> None:
     print(f"outline_fonts: {len(fonts)} fonts, {len(cases)} texts")
 
 
+def _dxf_bytes(doc) -> bytes:
+    fd, name = tempfile.mkstemp(suffix=".dxf")
+    os.close(fd)
+    doc.saveas(name)
+    data = Path(name).read_bytes()
+    os.unlink(name)
+    return data
+
+
+def dxf_inputs() -> dict:
+    import math
+
+    out = {"simple.dxf": dxf_simple()}
+
+    doc = ezdxf.new("R2018", units=4)
+    msp = doc.modelspace()
+    for i, (s, e) in enumerate([(0, 90), (30, 300), (300, 30), (-45, 45), (10, 370), (0, 360), (90, 90.0000001), (720, 45)]):
+        msp.add_arc((i * 30, 0), 5 + i, s, e)
+    msp.add_arc((0, 40), 7, 20, 160, dxfattribs={"extrusion": (0, 0, -1)})
+    msp.add_arc((30, 40), 7, 20, 160, dxfattribs={"extrusion": (0.3, 0.2, 0.9)})
+    msp.add_circle((60, 40), 6)
+    msp.add_circle((90, 40), 6, dxfattribs={"extrusion": (0, 0, -1)})
+    msp.add_circle((120, 40), 1e-13)
+    msp.add_circle((150, 40), -4)
+    msp.add_ellipse((0, 80), (10, 3), 0.4)
+    msp.add_ellipse((30, 80), (3, 10), 0.6, 0.5, 4.0)
+    msp.add_ellipse((60, 80), (-8, 5), 0.25, 5.0, 1.0)
+    msp.add_ellipse((90, 80), (8, 0, 0), 0.5, 0, math.pi, dxfattribs={"extrusion": (0, 0, -1)})
+    msp.add_line((0, -20, 0), (50, -25, 3))
+    msp.add_line((5, -30), (5, -30))
+    out["curves.dxf"] = _dxf_bytes(doc)
+
+    doc = ezdxf.new("R2018", units=1)
+    msp = doc.modelspace()
+    msp.add_lwpolyline([(0, 0, 0, 0, 0.5), (10, 0, 0, 0, -1), (20, 5, 0, 0, 0), (25, 15, 0, 0, 0.3)], format="xyseb")
+    msp.add_lwpolyline([(0, 20, 0, 0, 1), (10, 20, 0, 0, 0), (10, 30, 0, 0, -0.4)], format="xyseb", close=True)
+    msp.add_lwpolyline([(30, 0), (40, 0), (40, 10)], dxfattribs={"const_width": 0.5})
+    msp.add_lwpolyline([(30, 20, 0.2, 0.8, 0), (40, 20, 1.5, 0.1, 0), (45, 30, 0, 0, 0)], format="xyseb")
+    msp.add_lwpolyline([(50, 0, 0, 0, 0.7), (60, 0, 0, 0, 0), (60, 10, 0, 0, 0)], format="xyseb",
+                       dxfattribs={"elevation": 2.0, "extrusion": (0, 0, -1)})
+    msp.add_lwpolyline([(70, 0), (80, 5), (70, 0.0000000001), (70, 0)], close=True)
+    msp.add_lwpolyline([(90, 0)])
+    msp.add_polyline2d([(0, 50, 0, 0, 0.4), (10, 50, 0, 0, 0), (10, 60, 0, 0, -0.9)], format="xyseb", close=True)
+    msp.add_polyline2d([(20, 50), (30, 55), (35, 50)], dxfattribs={"elevation": (0, 0, 1.5)})
+    msp.add_polyline3d([(40, 50, 0), (50, 55, 5), (55, 50, -2)], close=True)
+    msp.add_polymesh((3, 3))
+    out["polylines.dxf"] = _dxf_bytes(doc)
+
+    doc = ezdxf.new("R2018", units=4)
+    msp = doc.modelspace()
+    msp.add_open_spline([(0, 0), (10, 10), (20, 0), (30, 10), (40, 0)], degree=3)
+    msp.add_open_spline([(0, 20), (10, 30), (20, 20), (30, 30)], degree=2)
+    msp.add_rational_spline([(0, 40), (10, 50), (20, 40), (30, 50)], [1, 2, 0.5, 1], degree=3)
+    sp = msp.add_open_spline([(50, 0), (60, 10), (70, 0), (60, -10), (50, 0)], degree=3)
+    sp.knots = [float(k) for k in range(9)]
+    sp = msp.add_open_spline([(50, 30), (55, 40), (65, 35), (70, 45), (75, 30)], degree=3)
+    sp.knots = [k * 2.5 + 1.0 for k in sp.knots]
+    sp = msp.add_open_spline([(80, 0), (85, 10), (95, 5), (100, 15)], degree=3)
+    sp.knots = [0.0, 0.0, 0.0, 0.0, 0.33333333333, 0.66666666667, 1.0, 1.0][:len(sp.knots)]
+    msp.add_spline([(x, 60 + 5 * math.sin(x / 7)) for x in range(0, 100, 5)])
+    sp = msp.add_spline([(x, 80 + 5 * math.cos(x / 9)) for x in range(0, 110, 5)])
+    sp.dxf.start_tangent, sp.dxf.end_tangent = (1, 1, 0), (1, -1, 0)
+    out["splines.dxf"] = _dxf_bytes(doc)
+
+    doc = ezdxf.new("R2018", units=4)
+    msp = doc.modelspace()
+    msp.add_spline([(0, 0), (10, 10), (20, 0), (30, 5)])
+    sp = msp.add_spline([(0, 20), (10, 30), (20, 25)])
+    sp.dxf.start_tangent, sp.dxf.end_tangent = (0, 1, 0), (1, 0, 0)
+    out["approx_fit_splines.dxf"] = _dxf_bytes(doc)
+
+    doc = ezdxf.new("R2018", units=4, setup=True)
+    msp = doc.modelspace()
+    doc.layers.add("RED", lineweight=50)
+    doc.layers.add("OFF").off()
+    doc.layers.add("FROZEN").freeze()
+    doc.layers.add("dash", linetype="DASHED")
+    blk = doc.blocks.new("PART", base_point=(5, 5))
+    blk.add_line((0, 0), (10, 0))
+    blk.add_line((0, 0), (0, 10), dxfattribs={"layer": "RED", "lineweight": -2, "linetype": "BYBLOCK"})
+    blk.add_circle((5, 5), 3)
+    blk.add_arc((5, 5), 4, 0, 120)
+    blk.add_ellipse((5, 5), (3, 1), 0.5, 0, 3)
+    blk.add_lwpolyline([(0, 10, 0, 0, 0.5), (10, 10, 0, 0, 0), (10, 0, 0, 0, 0)], format="xyseb")
+    blk.add_lwpolyline([(0, 12), (10, 12), (10, 14)], dxfattribs={"const_width": 0.4})
+    blk.add_polyline2d([(0, 15, 0, 0, -0.5), (5, 18, 0, 0, 0), (8, 15, 0, 0, 0)], format="xyseb")
+    blk.add_polyline3d([(0, 0, 0), (3, 3, 3), (6, 0, 1)])
+    blk.add_spline([(0, 0), (2, 3), (4, 1), (6, 4), (8, 0), (10, 2), (12, 1), (14, 3), (16, 0), (18, 2),
+                    (20, 1), (22, 3), (24, 0), (26, 2), (28, 1), (30, 3), (32, 0), (34, 2)])
+    blk.add_text("BLOCKTEXT", dxfattribs={"insert": (1, 1), "rotation": 30})
+    blk.add_mtext("M\\PTEXT", dxfattribs={"insert": (2, 2)})
+    blk.add_point((1, 1))
+    blk.add_attdef("TAG", (0, 0))
+    blk.add_solid([(0, 0), (1, 0), (0, 1), (1, 1)])
+    inner = doc.blocks.new("INNER")
+    inner.add_line((0, 0), (3, 3))
+    inner.add_circle((0, 0), 1)
+    inner.add_lwpolyline([(0, 0, 0, 0, 1), (2, 0, 0, 0, 0)], format="xyseb")
+    blk.add_blockref("INNER", (2, 2), dxfattribs={"rotation": 45, "xscale": 2, "yscale": 0.5})
+    blk.add_blockref("INNER", (4, 4), dxfattribs={"rotation": 15})
+    msp.add_blockref("PART", (0, 0))
+    msp.add_blockref("PART", (50, 0), dxfattribs={"xscale": 2, "yscale": 2, "rotation": 30, "lineweight": 70,
+                                                   "linetype": "DASHED"})
+    msp.add_blockref("PART", (100, 0), dxfattribs={"xscale": 2, "yscale": 0.5, "layer": "RED"})
+    msp.add_blockref("PART", (150, 0), dxfattribs={"xscale": -1, "yscale": 1, "rotation": 10})
+    msp.add_blockref("PART", (0, 60), dxfattribs={"xscale": 1.5, "yscale": 1.5, "zscale": 1.5,
+                                                   "extrusion": (0, 0, -1)})
+    msp.add_blockref("PART", (50, 60), dxfattribs={"layer": "OFF"})
+    msp.add_blockref("PART", (100, 60), dxfattribs={"layer": "FROZEN"})
+    msp.add_blockref("NOPE", (0, 0))
+    m = msp.add_blockref("INNER", (0, 120))
+    m.grid(size=(2, 3), spacing=(10, 10))
+    ins = msp.add_blockref("INNER", (150, 120), dxfattribs={"rotation": 90, "xscale": 3, "yscale": 1})
+    ins.add_attrib("TAG", "VALUE", (150, 120))
+    msp.add_line((0, 200), (100, 200), dxfattribs={"layer": "dash"})
+    msp.add_line((0, 210), (100, 210), dxfattribs={"linetype": "DASHDOT", "ltscale": 0.5})
+    msp.add_line((0, 220), (100, 220), dxfattribs={"linetype": "UNKNOWN_LT"})
+    msp.add_line((0, 230), (100, 230), dxfattribs={"layer": "OFF"})
+    msp.add_line((0, 240), (100, 240), dxfattribs={"invisible": 1})
+    msp.add_line((0, 250), (100, 250), dxfattribs={"lineweight": -3})
+    msp.add_line((0, 260), (100, 260), dxfattribs={"lineweight": -2})
+    msp.add_line((0, 270), (100, 270), dxfattribs={"layer": "NEWLAYER", "linetype": "BORDER"})
+    doc.header["$LTSCALE"] = 2.0
+    out["blocks.dxf"] = _dxf_bytes(doc)
+
+    doc = ezdxf.new("R2018", units=4, setup=True)
+    msp = doc.modelspace()
+    msp.add_text("Hello  world", dxfattribs={"insert": (0, 0), "height": 2.5})
+    msp.add_text("%%c10 %%d %%p", dxfattribs={"insert": (0, 10)})
+    msp.add_text("ocs", dxfattribs={"insert": (5, 5), "extrusion": (0, 0, -1)})
+    msp.add_text("   ", dxfattribs={"insert": (0, 20)})
+    msp.add_text("Жук \\U+0416", dxfattribs={"insert": (0, 25)})
+    msp.add_mtext("{\\fArial|b1;Bold} plain\\Pnext line \\S1/2; %%d ^I tab \\\\ back {\\H2x;big}",
+                  dxfattribs={"insert": (0, 30)})
+    msp.add_mtext("A" * 300 + " end", dxfattribs={"insert": (0, 40)})
+    msp.add_mtext("\\Lunder\\l \\Ttrack;", dxfattribs={"insert": (0, 50), "rotation": 30})
+    d = msp.add_linear_dim(base=(0, 70), p1=(0, 60), p2=(40, 60))
+    d.render()
+    d = msp.add_aligned_dim(p1=(50, 60), p2=(80, 80), distance=5)
+    d.render()
+    d = msp.add_radius_dim(center=(100, 60), radius=10, angle=45)
+    d.render()
+    d = msp.add_angular_dim_2l(base=(130, 70), line1=((120, 60), (140, 60)), line2=((120, 60), (135, 75)))
+    d.render()
+    blk = doc.blocks.new("WITHDIM")
+    d = blk.add_linear_dim(base=(0, 10), p1=(0, 0), p2=(20, 0))
+    d.render()
+    msp.add_blockref("WITHDIM", (0, 100), dxfattribs={"xscale": 2, "yscale": 2, "rotation": 20})
+    msp.add_blockref("WITHDIM", (50, 100), dxfattribs={"xscale": 2, "yscale": 1})
+    msp.add_leader([(0, 130), (10, 140), (20, 140)])
+    msp.add_leader([(30, 130), (40, 140)], dimstyle="EZDXF")
+    msp.add_point((0, 0))
+    msp.add_xline((0, 0), (1, 1))
+    msp.add_3dface([(0, 0, 0), (1, 0, 0), (1, 1, 0)])
+    out["annotations.dxf"] = _dxf_bytes(doc)
+
+    doc = ezdxf.new("R2018", units=4)
+    msp = doc.modelspace()
+    msp.add_solid([(0, 0), (2, 0), (0, 1.5), (2, 1.5)])
+    msp.add_solid([(5, 0), (7, 0), (6, 1)])
+    msp.add_trace([(10, 0), (12, 0), (10, 1), (12, 1)])
+    msp.add_solid([(0, 10), (20, 10), (0, 30), (20, 30)])
+    h = msp.add_hatch()
+    h.paths.add_polyline_path([(20, 0, 0), (22, 0, 0.5), (22, 2, 0), (20, 2, 0)], is_closed=True)
+    h = msp.add_hatch()
+    ep = h.paths.add_edge_path()
+    ep.add_line((30, 0), (33, 0))
+    ep.add_arc((33, 1), 1, -90, 90)
+    ep.add_line((33, 2), (30, 2))
+    ep.add_ellipse((30, 1), (0, 1), 0.5, 90, 270)
+    h = msp.add_hatch()
+    ep = h.paths.add_edge_path()
+    ep.add_spline(control_points=[(40, 0), (41, 2), (43, 2), (44, 0)], knot_values=[0, 0, 0, 0, 1, 1, 1, 1], degree=3)
+    ep.add_line((44, 0), (40, 0))
+    h = msp.add_hatch()
+    h.set_pattern_fill("ANSI31")
+    h.paths.add_polyline_path([(50, 0), (55, 0), (55, 5)], is_closed=True)
+    h = msp.add_hatch(dxfattribs={"extrusion": (0, 0, -1), "elevation": (0, 0, 3)})
+    h.paths.add_polyline_path([(60, 0), (61, 0), (61, 1), (60, 1)], is_closed=True)
+    blk = doc.blocks.new("FILLS")
+    blk.add_solid([(0, 0), (1, 0), (0, 1)])
+    hh = blk.add_hatch()
+    hh.paths.add_polyline_path([(0, 0), (1, 0), (1, 1)], is_closed=True)
+    msp.add_blockref("FILLS", (70, 0), dxfattribs={"rotation": 30})
+    msp.add_blockref("FILLS", (80, 0), dxfattribs={"xscale": 2, "yscale": 1})
+    idef = doc.add_image_def("img.png", (100, 100))
+    msp.add_image(idef, (90, 0), (10, 10))
+    out["fills.dxf"] = _dxf_bytes(doc)
+
+    doc = ezdxf.new("R12")
+    msp = doc.modelspace()
+    msp.add_line((0, 0), (10, 0))
+    msp.add_arc((5, 5), 3, 0, 270)
+    msp.add_polyline2d([(0, 10, 0, 0, 0.5), (10, 10, 0, 0, 0)], format="xyseb")
+    msp.add_text("R12 text", dxfattribs={"insert": (0, 20)})
+    blk = doc.blocks.new("B12")
+    blk.add_circle((0, 0), 2)
+    msp.add_blockref("B12", (20, 20), dxfattribs={"xscale": 2, "yscale": 3})
+    out["r12.dxf"] = _dxf_bytes(doc)
+
+    for units in (0, 6, 16, 2):
+        doc = ezdxf.new("R2010", units=units)
+        doc.modelspace().add_line((0, 0), (1, 2))
+        out[f"units_{units}.dxf"] = _dxf_bytes(doc)
+
+    doc = ezdxf.new("R2000", units=4)
+    doc.header["$DWGCODEPAGE"] = "ANSI_1251"
+    doc.layers.add("Слой")
+    msp = doc.modelspace()
+    msp.add_line((0, 0), (5, 5), dxfattribs={"layer": "Слой"})
+    msp.add_text("Привет", dxfattribs={"insert": (1, 1)})
+    msp.add_mtext("Мир\\Pвторая", dxfattribs={"insert": (2, 2)})
+    out["cp1251.dxf"] = _dxf_bytes(doc)
+
+    doc = ezdxf.new("R2018", units=4)
+    psp = doc.layout("Layout1")
+    psp.add_line((0, 0), (100, 50))
+    psp.add_circle((50, 50), 20)
+    out["paperspace.dxf"] = _dxf_bytes(doc)
+
+    out["broken.dxf"] = b"0\nSECTION\n2\nENTITIES\n0\nLINE\n10\nabc\n20\n1\n0\nENDSEC\n0\nEOF\n"
+    out["empty.dxf"] = b""
+    out["garbage.dxf"] = b"\x00\x01binary\xff"
+
+    import random
+
+    rng = random.Random(23)
+
+    def rnd_ext():
+        return rng.choice([(0, 0, 1), (0, 0, -1), (rng.uniform(-1, 1), rng.uniform(-1, 1), rng.uniform(0.2, 1)),
+                           (0.01, 0.005, 1)])
+
+    def rnd_entities(lay):
+        for _ in range(rng.randint(4, 9)):
+            kind = rng.choice(["line", "arc", "circle", "ellipse", "lw", "poly2d", "spline", "text", "solid", "hatch",
+                               "mtext", "fit", "edgehatch", "dim", "leader", "poly3d"])
+            c = (rng.uniform(-50, 50), rng.uniform(-50, 50))
+            at = {"extrusion": rnd_ext()} if rng.random() < 0.3 else {}
+            if kind == "line":
+                lay.add_line(c, (rng.uniform(-50, 50), rng.uniform(-50, 50), rng.uniform(-3, 3)))
+            elif kind == "arc":
+                lay.add_arc(c, rng.uniform(0.5, 20), rng.uniform(-400, 400), rng.uniform(-400, 400), dxfattribs=at)
+            elif kind == "circle":
+                lay.add_circle(c, rng.uniform(0.5, 20), dxfattribs=at)
+            elif kind == "ellipse":
+                lay.add_ellipse(c, (rng.uniform(-10, 10), rng.uniform(-10, 10), 0), rng.uniform(0.05, 1),
+                                rng.uniform(-7, 7), rng.uniform(-7, 7), dxfattribs=at)
+            elif kind == "lw":
+                pts = [(rng.uniform(-30, 30), rng.uniform(-30, 30), 0, 0, rng.choice([0, 0, rng.uniform(-2, 2)]))
+                       for _ in range(rng.randint(2, 6))]
+                lay.add_lwpolyline(pts, format="xyseb", close=rng.random() < 0.4, dxfattribs=at)
+            elif kind == "poly2d":
+                pts = [(rng.uniform(-30, 30), rng.uniform(-30, 30), 0, 0, rng.choice([0, rng.uniform(-1, 1)]))
+                       for _ in range(rng.randint(2, 5))]
+                lay.add_polyline2d(pts, format="xyseb", close=rng.random() < 0.4, dxfattribs=at)
+            elif kind == "spline":
+                pts = [(rng.uniform(-30, 30), rng.uniform(-30, 30)) for _ in range(rng.randint(4, 7))]
+                sp = lay.add_open_spline(pts, degree=rng.choice([2, 3, 3]))
+                if rng.random() < 0.3:
+                    sp.weights = [rng.uniform(0.5, 2) for _ in pts]
+            elif kind == "text":
+                lay.add_text(f"T{rng.randint(0, 99)}", dxfattribs={"insert": c, "rotation": rng.uniform(0, 360), **at})
+            elif kind == "solid":
+                lay.add_solid([c, (c[0] + 1, c[1]), (c[0], c[1] + 0.7), (c[0] + 1.2, c[1] + 1)], dxfattribs=at)
+            elif kind == "mtext":
+                lay.add_mtext(f"M{rng.randint(0, 9)}\\P{{\\H2;x}}", dxfattribs={"insert": c, "rotation": rng.uniform(0, 90), **at})
+            elif kind == "fit":
+                pts = [(c[0] + i * 2, c[1] + rng.uniform(-3, 3)) for i in range(rng.choice([18, 19, 25]))]
+                sp = lay.add_spline(pts)
+                if rng.random() < 0.5:
+                    sp.dxf.start_tangent, sp.dxf.end_tangent = (1, rng.uniform(-1, 1), 0), (1, rng.uniform(-1, 1), 0)
+            elif kind == "edgehatch":
+                h = lay.add_hatch(dxfattribs=at)
+                ep = h.paths.add_edge_path()
+                ep.add_line(c, (c[0] + 2, c[1]))
+                ep.add_arc((c[0] + 2, c[1] + 1), 1, -90, 90, ccw=rng.random() < 0.7)
+                ep.add_ellipse((c[0], c[1] + 1), (0, 1), rng.uniform(0.3, 1), 90, 270)
+            elif kind == "dim":
+                lay.add_linear_dim(base=(c[0], c[1] + 5), p1=c, p2=(c[0] + rng.uniform(5, 20), c[1]),
+                                   angle=rng.choice([0, 0, 30])).render()
+            elif kind == "leader":
+                lay.add_leader([c, (c[0] + 5, c[1] + 4), (c[0] + 9, c[1] + 4)])
+            elif kind == "poly3d":
+                lay.add_polyline3d([(c[0], c[1], 0), (c[0] + 3, c[1] + 1, 2), (c[0] + 5, c[1] - 2, -1)],
+                                   close=rng.random() < 0.5)
+            else:
+                h = lay.add_hatch(dxfattribs=at)
+                h.paths.add_polyline_path([(c[0], c[1], rng.choice([0, 0.4])), (c[0] + 1.5, c[1], 0),
+                                           (c[0] + 1.5, c[1] + 1, 0)], is_closed=True)
+
+    for n in range(24):
+        doc = ezdxf.new("R2018", units=4, setup=n % 2 == 0)
+        msp = doc.modelspace()
+        rnd_entities(msp)
+        for b in range(3):
+            blk = doc.blocks.new(f"B{b}", base_point=(rng.uniform(-5, 5), rng.uniform(-5, 5)))
+            rnd_entities(blk)
+            if b > 0 and rng.random() < 0.7:
+                blk.add_blockref(f"B{b - 1}", (rng.uniform(-9, 9), rng.uniform(-9, 9)),
+                                 dxfattribs={"xscale": rng.choice([1, 2, -1, 0.5]), "yscale": rng.choice([1, 1, 3, -2]),
+                                             "rotation": rng.uniform(0, 360)})
+        for _ in range(4):
+            sx = rng.choice([1, 1.5, -1, 2])
+            sy = rng.choice([sx, sx, 0.5, -sx])
+            msp.add_blockref(f"B{rng.randint(0, 2)}", (rng.uniform(-80, 80), rng.uniform(-80, 80)),
+                             dxfattribs={"xscale": sx, "yscale": sy, "rotation": rng.uniform(0, 360),
+                                         "extrusion": rnd_ext() if rng.random() < 0.3 else (0, 0, 1)})
+        out[f"random_{n}.dxf"] = _dxf_bytes(doc)
+    return out
+
+
+def dxf_case() -> None:
+    from handwriter.drawing.dxf_import import import_dxf
+    from handwriter.settings import DrawingImport
+
+    d = OUT / "dxf"
+    shutil.rmtree(d, ignore_errors=True)
+    (d / "input").mkdir(parents=True)
+    imports = []
+    for fname, data in dxf_inputs().items():
+        (d / "input" / fname).write_bytes(data)
+        variants = (("auto", 0.05, False), ("auto", 0.5, True), ("mm", 0.05, True), ("in", 0.2, False))
+        if fname.startswith("random_"):
+            variants = (("auto", 0.1, False), ("in", 0.5, True))
+        for units, tol, fills in variants:
+            imp = DrawingImport(units=units, fill_centerlines=fills)
+            imports.append({"file": fname, "units": units, "tol": tol, "fills": fills,
+                            "result": dump_import(import_dxf(data, fname, imp, tol))})
+    (d / "cases.json").write_text(json.dumps({"imports": imports}, ensure_ascii=False), encoding="utf-8")
+    print(f"dxf: {len(imports)} imports")
+
+
 def main() -> None:
     os.environ["HANDWRITER_HOME"] = tempfile.mkdtemp(prefix="hw-golden-")
     OUT.mkdir(parents=True, exist_ok=True)
@@ -1560,6 +1892,7 @@ def main() -> None:
     skeleton_case()
     raster_case()
     outline_font_case()
+    dxf_case()
     shutil.copy(TEST_FONTS / "BadScript-Regular.ttf", user_fonts_dir())
 
     save_case("text_default", text_settings(), text_run)

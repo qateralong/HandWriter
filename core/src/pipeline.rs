@@ -288,7 +288,7 @@ pub fn preview_payload(c: &Composition, prov: Option<&dyn GlyphProvider>) -> ser
                 "x_height": m.map(|m| m.x_height), "x_height_source": m.map_or("", |m| m.x_height_source.as_str()),
                 "features": info.features, "gpos_features": info.gpos_features,
                 "variant_sources": info.variant_sources,
-                "ligatures": info.ligatures.iter().map(|(a, b, c)| json!([a, b, c])).collect::<Vec<_>>(),
+                "ligatures": info.ligatures.iter().map(|(c, g, f)| json!({"chars": c, "glyph": g, "feature": f})).collect::<Vec<_>>(),
             }),
         );
     }

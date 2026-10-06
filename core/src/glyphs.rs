@@ -102,6 +102,14 @@ pub trait GlyphProvider {
 
     fn prepare(&self, _names: &[String]) {}
 
+    fn debug_glyph(&self, name: &str) -> Option<serde_json::Value> {
+        let g = self.glyph(name)?;
+        let closed: Vec<bool> = g.strokes.iter().map(|s| s.len() > 2 && s[0] == s[s.len() - 1]).collect();
+        let strokes: Vec<Vec<[f64; 2]>> = g.strokes.iter().map(|s| s.iter().map(|p| [p.0, p.1]).collect()).collect();
+        Some(serde_json::json!({"name": g.name, "outline": [], "strokes": strokes, "raw": [], "closed": closed,
+                                "advance": g.advance, "ms": 0}))
+    }
+
     fn glyph_names(&self) -> Vec<String> {
         let names: BTreeSet<String> =
             self.info().chars.chars().flat_map(|c| self.glyph_names_for_char(&c.to_string())).collect();

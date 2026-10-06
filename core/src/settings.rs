@@ -589,9 +589,9 @@ pub const PROFILE_LINES: &str = "Тетрадь в линейку";
 
 pub fn default_profiles() -> IndexMap<String, Profile> {
     let mut m = IndexMap::new();
-    m.insert(PROFILE_GRID.into(), Profile { sheet: Sheet::default(), size_mm: 3.0, baseline_shift: 0.0 });
+    m.insert(crate::i18n::tr(PROFILE_GRID), Profile { sheet: Sheet::default(), size_mm: 3.0, baseline_shift: 0.0 });
     m.insert(
-        PROFILE_LINES.into(),
+        crate::i18n::tr(PROFILE_LINES),
         Profile {
             sheet: Sheet {
                 first_line_top: 16.0,
@@ -659,8 +659,8 @@ impl Default for Settings {
             version: 1,
             font: DEFAULT_FONT.into(),
             mode: Mode::Strokes,
-            text: SAMPLE_TEXT.into(),
-            active_profile: PROFILE_GRID.into(),
+            text: crate::i18n::tr(SAMPLE_TEXT),
+            active_profile: crate::i18n::tr(PROFILE_GRID),
             sheet: Sheet::default(),
             typography: Typography::default(),
             text_options: TextOptions::default(),

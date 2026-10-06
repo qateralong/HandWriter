@@ -963,6 +963,10 @@ impl OutlineGlyphProvider {
 }
 
 impl GlyphProvider for OutlineGlyphProvider {
+    fn debug_glyph(&self, name: &str) -> Option<serde_json::Value> {
+        OutlineGlyphProvider::debug_glyph(self, name)
+    }
+
     fn mode(&self) -> &'static str {
         "outlines"
     }

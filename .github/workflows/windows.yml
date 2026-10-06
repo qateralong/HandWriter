@@ -9,7 +9,7 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - run: git config --global core.autocrlf false && git config --global core.eol lf
+      - run: git config --global core.autocrlf false && git config --global core.eol lf && git config --global core.protectNTFS false
       - uses: actions/checkout@v4
         with:
           sparse-checkout-cone-mode: false

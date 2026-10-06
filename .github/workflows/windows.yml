@@ -1,0 +1,31 @@
+name: Windows build
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - run: git config --global core.autocrlf false && git config --global core.eol lf
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release -p handwriter
+      - name: Tests
+        run: cargo test --release --workspace
+      - name: Self-test
+        shell: pwsh
+        run: |
+          $p = Start-Process target\release\handwriter.exe -ArgumentList '--selftest','--report',"$PWD\selftest.txt" -Wait -PassThru
+          Get-Content -Encoding UTF8 selftest.txt
+          if ($p.ExitCode -ne 0) { exit 1 }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HandWriter-2.0-windows
+          path: |
+            target/release/handwriter.exe
+            selftest.txt

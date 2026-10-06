@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HandWriter</title>
+<link rel="icon" href="/static/icon.png">
+<link rel="stylesheet" href="/ui/app.css">
+<script src="/ui/theme.js"></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <div class="logo"><img src="/static/icon.png" alt=""><span>HandWriter</span></div>
+    <div class="seg" id="modeSeg" role="tablist" aria-label="Режим">
+      <button data-mode="drawing" class="on" role="tab">Чертёж</button>
+      <button data-mode="notebook" role="tab">Тетрадный</button>
+    </div>
+  </div>
+  <div class="center-tools">
+    <div class="seg" id="viewSeg" aria-label="Вид">
+      <button data-view="one" class="on">Один лист</button>
+      <button data-view="all">Все листы</button>
+    </div>
+    <div class="pager" id="pager" hidden>
+      <button id="prevPass" class="icon" title="Предыдущий проход" aria-label="Предыдущий проход">‹</button>
+      <span id="passLabel"></span>
+      <button id="nextPass" class="icon" title="Следующий проход" aria-label="Следующий проход">›</button>
+    </div>
+  </div>
+  <div class="actions">
+    <button id="printerBtn" class="icon round" title="Принтер по кабелю" aria-label="Принтер" aria-expanded="false">
+      <svg viewBox="0 0 24 24"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v7H6z"/></svg>
+      <i class="dot"></i>
+    </button>
+    <button id="settingsBtn" class="icon round" title="Настройки" aria-label="Настройки">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main class="stage" id="stage">
+  <canvas id="cv"></canvas>
+  <div class="messages" id="messages"></div>
+  <div class="busy" id="busy" hidden><span class="spinner"></span><span id="busyText">считаю…</span></div>
+</main>
+
+<aside class="printer-panel" id="printerPanel" hidden aria-label="Принтер по кабелю">
+  <div class="pp-head">
+    <span class="pop-title">Принтер по кабелю</span>
+    <span class="pill" id="ppStatus">не подключён</span>
+    <button class="icon" id="ppClose" aria-label="Закрыть">×</button>
+  </div>
+  <div class="pp-msg" id="ppMsg"></div>
+  <button class="btn danger" id="ppEmergency" hidden title="Мгновенная остановка (M112). После неё принтер нужно перезапустить.">Аварийная остановка</button>
+
+  <section class="pp-sec" id="ppConn">
+    <div class="pp-row">
+      <select id="ppPort" aria-label="Порт"></select>
+      <button class="icon" id="ppRefresh" title="Обновить список портов" aria-label="Обновить список портов">↻</button>
+    </div>
+    <input type="text" id="ppPath" placeholder="/dev/ttyUSB0 или COM3" hidden>
+    <div class="pp-row">
+      <select id="ppBaud" aria-label="Скорость">
+        <option value="115200">115200 бод</option>
+        <option value="250000">250000 бод</option>
+        <option value="57600">57600 бод</option>
+      </select>
+      <button class="btn small primary" id="ppConnect">Подключить</button>
+    </div>
+  </section>
+
+  <section class="pp-sec" id="ppPrint" hidden>
+    <h3>Печать</h3>
+    <div id="ppJobs"></div>
+    <div class="pp-progress" id="ppProgress" hidden>
+      <div class="pp-bar"><i id="ppBar"></i></div>
+      <div class="pp-ptext" id="ppPText"></div>
+      <div class="pp-row">
+        <button class="btn small" id="ppPause">Пауза</button>
+        <button class="btn small" id="ppResume" hidden>Продолжить</button>
+        <button class="btn small" id="ppStop">Стоп</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="pp-sec" id="ppMove" hidden>
+    <h3>Ручное управление</h3>
+    <div class="pp-pos" id="ppPos"></div>
+    <div class="seg pp-steps" id="ppSteps">
+      <button data-step="0.1">0.1</button><button data-step="1">1</button><button data-step="10" class="on">10</button><button data-step="50">50</button>
+      <span class="unit">мм</span>
+    </div>
+    <div class="pp-jog">
+      <div class="pp-xy">
+        <span></span><button class="icon" data-jog="Y+" title="Y+">▲</button><span></span>
+        <button class="icon" data-jog="X-" title="X−">◀</button>
+        <button class="icon" id="ppHome" title="В начало по X и Y (G28 X Y)" aria-label="В начало по X и Y">⌂</button>
+        <button class="icon" data-jog="X+" title="X+">▶</button>
+        <span></span><button class="icon" data-jog="Y-" title="Y−">▼</button><span></span>
+      </div>
+      <div class="pp-z">
+        <button class="icon" data-jog="Z+" title="Z+">▲</button>
+        <span>Z</span>
+        <button class="icon" data-jog="Z-" title="Z−">▼</button>
+      </div>
+      <div class="pp-pen">
+        <button class="btn small" id="ppPenUp">Поднять карандаш</button>
+        <button class="btn small" id="ppPenDown">Опустить карандаш</button>
+        <button class="btn small" id="ppZero" title="Карандаш касается бумаги в углу листа — запомнить эту точку как ноль">Ноль здесь</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="pp-sec pp-console" id="ppConsole" hidden>
+    <h3>Консоль</h3>
+    <div class="pp-log" id="ppLog"></div>
+    <form class="pp-row" id="ppCmdForm">
+      <input type="text" id="ppCmd" placeholder="Команда, например M114" spellcheck="false" autocomplete="off">
+      <button class="btn small" type="submit">Отправить</button>
+    </form>
+  </section>
+</aside>
+
+<footer class="bottom">
+  <div class="left">
+    <label class="btn primary" id="uploadBtn">
+      <input type="file" id="fileInput" accept=".svg,.dxf,.pdf,.png,.jpg,.jpeg" hidden>
+      <svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>
+      <span>Загрузить файл</span>
+    </label>
+    <button class="btn" id="paramsBtn" title="Параметры чертежа" aria-expanded="false">
+      <svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+      <span>Чертёж</span>
+      <span class="caret">▴</span>
+    </button>
+    <button class="btn primary" id="textBtn" aria-expanded="false" hidden>
+      <svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4"/></svg>
+      <span>Текст</span>
+      <span class="caret">▴</span>
+    </button>
+    <button class="btn" id="handBtn" aria-expanded="false" hidden>
+      <svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+      <span>Почерк</span>
+      <span class="caret">▴</span>
+    </button>
+    <span class="file" id="fileName"></span>
+  </div>
+  <div class="time" id="timeBox">Время печати: <b id="timeVal">—</b></div>
+  <div class="right">
+    <button class="btn primary" id="downloadBtn" disabled>
+      <svg viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5M4 20h16"/></svg>
+      <span>Скачать gcode</span>
+    </button>
+  </div>
+</footer>
+<div class="popover quick" id="paramsPop" hidden>
+  <div class="pop-head"><span class="pop-title">Параметры чертежа</span><button class="icon" id="paramsClose" aria-label="Закрыть">×</button></div>
+  <div class="form" id="quickForm"></div>
+</div>
+
+<div class="popover quick" id="handPop" hidden>
+  <div class="pop-head"><span class="pop-title">Почерк</span><button class="icon" id="handClose" aria-label="Закрыть">×</button></div>
+  <div class="form" id="handForm"></div>
+  <input type="file" id="fontInput" accept=".ttf,.otf,.svg" hidden>
+</div>
+
+<div class="popover quick editor" id="textPop" hidden>
+  <div class="pop-head">
+    <span class="pop-title">Текст</span>
+    <span class="pop-tools">
+      <label class="btn small"><input type="file" id="txtInput" accept=".txt,text/plain" hidden>Загрузить .txt</label>
+      <button class="icon" id="textClose" aria-label="Закрыть">×</button>
+    </span>
+  </div>
+  <textarea id="textArea" spellcheck="false" placeholder="Напиши или вставь текст"></textarea>
+  <div class="text-info" id="textInfo"></div>
+  <div class="missing-box" id="missingBox"></div>
+  <div class="fgroup">
+    <h3>Какой кусок текста</h3>
+    <label class="frow"><span>Начало листа: слово</span><span class="ctl"><input type="number" id="startWord" min="1" step="1"></span></label>
+    <div class="frow"><span id="resumeText">Пишется весь лист</span><span class="ctl"><button class="btn small" id="resumeOff" hidden>Писать весь лист</button></span></div>
+    <p class="fhint">Щёлкни по букве на листе, чтобы продолжить печать с неё (если лист прервался).</p>
+    <div class="frow"><span id="endText"></span><span class="ctl"><button class="btn small" id="nextSheet" hidden>Следующий лист →</button></span></div>
+  </div>
+</div>
+
+<div class="overlay" id="settingsPanel" hidden>
+  <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <nav class="tabs" id="settingsTabs"></nav>
+    <div class="tab-body">
+      <div class="panel-head"><h2 id="settingsTitle"></h2><button class="icon" id="settingsClose" aria-label="Закрыть">×</button></div>
+      <div class="form" id="settingsForm"></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+<script src="/static/keepalive.js"></script>
+<script src="/ui/fields.js"></script>
+<script src="/ui/app.js"></script>
+<script src="/ui/printer.js"></script>
+</body>
+</html>

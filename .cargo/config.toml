@@ -1,0 +1,2 @@
+[env]
+PKG_CONFIG_PATH = { value = "core/third_party/mozjpeg-include", relative = true, force = true }

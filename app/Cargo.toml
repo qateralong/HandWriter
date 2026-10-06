@@ -1,0 +1,28 @@
+[package]
+name = "handwriter"
+version.workspace = true
+edition.workspace = true
+description = "HandWriter: handwriting and drawings with a pencil on a 3D printer"
+license = "AGPL-3.0-or-later"
+
+[[bin]]
+name = "handwriter"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.8"
+base64 = "0.22"
+handwriter-core = { path = "../core" }
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
+serde_path_to_error = "0.1"
+serialport = { version = "4", default-features = false }
+keepawake = "0.6"
+tauri = { version = "2", features = [] }
+tauri-plugin-single-instance = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "time", "sync"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }

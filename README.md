@@ -28,6 +28,18 @@ build.bat en     English interface  -> dist\HandWriter-en\HandWriter.exe
 
 Run: `python app.py`. Tests: `python -m pytest -q`.
 
+### HandWriter 2.0 (Rust, branch `rust-port`)
+
+One `HandWriter.exe` without `_internal`, its own window (WebView2), interface language in the settings, printing over USB.
+
+Windows: install Rust (rustup.rs), Build Tools for Visual Studio 2022 with "Desktop development with C++" and LLVM (`winget install LLVM.LLVM`), then:
+
+```
+build-2.0.bat    -> dist\HandWriter-2.0\HandWriter.exe
+```
+
+Linux: `cargo build --release -p handwriter`. Tests: `cargo test --workspace`. Self-test: `handwriter --selftest`. USB printing on Linux needs the `uucp` group: `sudo usermod -aG uucp $USER`, then log in again.
+
 ## Fonts
 
 Hershey fonts are in the public domain. Bad Script is under the SIL Open Font License 1.1.

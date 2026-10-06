@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg"><font horiz-adv-x="0">
+        <font-face units-per-em="0" ascent="800" descent="200"/>
+        <glyph unicode="е" d="M100 100 C 200 300 400 -50 500 200" transform="translate(10) scale(1 -1)"/>
+        <glyph unicode="е" d="M0 0 L5 5"/>
+        <glyph unicode="е" glyph-name="" d="M0 0 L6 6"/>
+        <glyph unicode="Н" horiz-adv-x="650"><g transform="matrix(1 0 0 1 5 5)"><circle cx="300" cy="300" r="250"/></g></glyph>
+        <glyph glyph-name="uni0435.alt" d="M1 1 L2 2"/>
+        <glyph glyph-name="orphan" d="M1 1 L2 2"/>
+        <glyph unicode="" d="M1 1 L2 2"/>
+        <glyph unicode="e&#769;" d="M1 1 L2 2"/>
+        <glyph unicode="й" d="M10 10 L20 20 Z Z"/>
+      </font></svg>

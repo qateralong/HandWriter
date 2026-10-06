@@ -171,46 +171,77 @@ fn decode_png(data: &[u8]) -> Result<Raw, String> {
     Ok(Raw { w, h, ch, data: px, composite, dpi, orientation })
 }
 
-fn decode_jpeg(data: &[u8]) -> Result<Raw, String> {
-    let data = data.to_vec();
-    std::panic::catch_unwind(move || -> Result<Raw, String> {
-        let d = mozjpeg::Decompress::with_markers(&[mozjpeg::Marker::APP(0), mozjpeg::Marker::APP(1)])
-            .from_mem(&data)
-            .map_err(|e| e.to_string())?;
-        let mut jfif_dpi: Option<f64> = None;
-        let mut exif: Option<Option<Exif>> = None;
-        for m in d.markers() {
-            if m.marker == mozjpeg::Marker::APP(0) && m.data.starts_with(b"JFIF") && m.data.len() >= 12 {
-                let unit = m.data[7];
-                let xd = u16::from_be_bytes([m.data[8], m.data[9]]) as f64;
-                match unit {
-                    1 => jfif_dpi = Some(xd),
-                    2 => jfif_dpi = Some(xd * 2.54),
-                    _ => {}
-                }
-            }
-            if m.marker == mozjpeg::Marker::APP(1) && m.data.starts_with(b"Exif\0\0") && exif.is_none() {
-                exif = Some(parse_tiff(&m.data[6..]));
+struct JpegMeta {
+    dpi: Option<f64>,
+    orientation: u16,
+}
+
+fn jpeg_meta(data: &[u8]) -> JpegMeta {
+    let mut jfif_dpi: Option<f64> = None;
+    let mut exif: Option<Option<Exif>> = None;
+    let mut i = 2;
+    while data.len() >= 4 && data[0] == 0xFF && data[1] == 0xD8 && i + 4 <= data.len() {
+        if data[i] != 0xFF {
+            break;
+        }
+        let marker = data[i + 1];
+        if marker == 0xFF {
+            i += 1;
+            continue;
+        }
+        if marker == 0x01 || (0xD0..=0xD7).contains(&marker) {
+            i += 2;
+            continue;
+        }
+        if marker == 0xDA || marker == 0xD9 {
+            break;
+        }
+        let len = u16::from_be_bytes([data[i + 2], data[i + 3]]) as usize;
+        if len < 2 || i + 2 + len > data.len() {
+            break;
+        }
+        let m = &data[i + 4..i + 2 + len];
+        if marker == 0xE0 && m.starts_with(b"JFIF") && m.len() >= 12 {
+            let xd = u16::from_be_bytes([m[8], m[9]]) as f64;
+            match m[7] {
+                1 => jfif_dpi = Some(xd),
+                2 => jfif_dpi = Some(xd * 2.54),
+                _ => {}
             }
         }
-        let orientation = exif.as_ref().and_then(|e| e.as_ref()).and_then(|e| e.orientation).unwrap_or(1);
-        let dpi = match (jfif_dpi, &exif) {
-            (Some(v), _) => Some(v),
-            (None, None) => None,
-            (None, Some(e)) => Some(
-                e.as_ref()
-                    .and_then(|e| match (e.resolution_unit, e.x_resolution) {
-                        (Some(unit), Some((num, den))) if den != 0 => {
-                            let v = num as f64 / den as f64;
-                            Some(if unit == 3 { v * 2.54 } else { v })
-                        }
-                        _ => None,
-                    })
-                    .unwrap_or(72.0),
-            ),
-        };
+        if marker == 0xE1 && m.starts_with(b"Exif\0\0") && exif.is_none() {
+            exif = Some(parse_tiff(&m[6..]));
+        }
+        i += 2 + len;
+    }
+    let orientation = exif.as_ref().and_then(|e| e.as_ref()).and_then(|e| e.orientation).unwrap_or(1);
+    let dpi = match (jfif_dpi, &exif) {
+        (Some(v), _) => Some(v),
+        (None, None) => None,
+        (None, Some(e)) => Some(
+            e.as_ref()
+                .and_then(|e| match (e.resolution_unit, e.x_resolution) {
+                    (Some(unit), Some((num, den))) if den != 0 => {
+                        let v = num as f64 / den as f64;
+                        Some(if unit == 3 { v * 2.54 } else { v })
+                    }
+                    _ => None,
+                })
+                .unwrap_or(72.0),
+        ),
+    };
+    JpegMeta { dpi, orientation }
+}
+
+#[cfg(not(windows))]
+fn decode_jpeg(data: &[u8]) -> Result<Raw, String> {
+    let meta = jpeg_meta(data);
+    let data = data.to_vec();
+    std::panic::catch_unwind(move || -> Result<Raw, String> {
+        let d = mozjpeg::Decompress::new_mem(&data).map_err(|e| e.to_string())?;
         let gray = matches!(d.color_space(), mozjpeg::ColorSpace::JCS_GRAYSCALE);
         let (w, h) = d.size();
+        let (dpi, orientation) = (meta.dpi, meta.orientation);
         if gray {
             let mut s = d.grayscale().map_err(|e| e.to_string())?;
             let px: Vec<u8> = s.read_scanlines().map_err(|e| e.to_string())?;
@@ -222,6 +253,40 @@ fn decode_jpeg(data: &[u8]) -> Result<Raw, String> {
         }
     })
     .map_err(|_| "cannot decode JPEG".to_string())?
+}
+
+#[cfg(windows)]
+fn decode_jpeg(data: &[u8]) -> Result<Raw, String> {
+    decode_jpeg_mupdf(data)
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn decode_jpeg_mupdf(data: &[u8]) -> Result<Raw, String> {
+    let meta = jpeg_meta(data);
+    let img = mupdf::Image::from_bytes(data).map_err(|e| e.to_string())?;
+    let pix = img.to_pixmap().map_err(|e| e.to_string())?;
+    let (w, h, n) = (pix.width() as usize, pix.height() as usize, pix.n() as usize);
+    let stride = pix.stride() as usize;
+    let src = pix.samples();
+    let alpha = usize::from(pix.alpha());
+    let colors = n - alpha;
+    let mut out = Vec::with_capacity(w * h * if colors == 1 { 1 } else { 3 });
+    for y in 0..h {
+        let row = &src[y * stride..y * stride + w * n];
+        for p in row.chunks_exact(n) {
+            match colors {
+                1 => out.push(p[0]),
+                3 => out.extend_from_slice(&p[..3]),
+                4 => {
+                    let k = 255 - p[3] as u32;
+                    out.extend(p[..3].iter().map(|&c| ((255 - c as u32) * k / 255) as u8));
+                }
+                _ => return Err(format!("unsupported JPEG with {colors} channels")),
+            }
+        }
+    }
+    let ch = if colors == 1 { Channels::Gray } else { Channels::Rgb };
+    Ok(Raw { w, h, ch, data: out, composite: false, dpi: meta.dpi, orientation: meta.orientation })
 }
 
 type PixelMap = Box<dyn Fn(usize, usize) -> (usize, usize)>;
@@ -601,4 +666,25 @@ pub fn import_raster(data: &[u8], name: &str, opts: &DrawingImport) -> ImportRes
             .into(),
     );
     res
+}
+
+#[cfg(all(test, not(windows)))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mupdf_jpeg_matches_mozjpeg() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/golden/raster/input");
+        for name in ["rgb.jpg", "gray.jpg", "rotated_exif.jpg", "rotated_noresunit.jpg"] {
+            let data = std::fs::read(dir.join(name)).unwrap();
+            let a = decode_jpeg(&data).unwrap();
+            let b = decode_jpeg_mupdf(&data).unwrap();
+            assert_eq!(
+                (a.w, a.h, a.ch.n(), a.dpi, a.orientation),
+                (b.w, b.h, b.ch.n(), b.dpi, b.orientation),
+                "{name}"
+            );
+            assert!(a.data == b.data, "{name}");
+        }
+    }
 }

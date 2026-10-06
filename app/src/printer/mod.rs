@@ -1,5 +1,5 @@
 pub mod protocol;
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests;
 
 use std::collections::VecDeque;

@@ -44,9 +44,6 @@ pub fn travel_moves(strokes: &[Vec<Point>]) -> Vec<(Point, Point)> {
         }
         cur = last;
     }
-    if cur != (0.0, 0.0) {
-        moves.push((cur, (0.0, 0.0)));
-    }
     moves
 }
 
@@ -74,7 +71,7 @@ pub fn compute_stats(strokes: &[Vec<Point>], s: &Settings) -> Stats {
         t = (draw / pr.feed_draw
             + travel / pr.feed_travel
             + 2.0 * dz * n as f64 / pr.feed_z
-            + 2.0 * pr.pen_up_z.abs() / pr.feed_z)
+            + (pr.pen_up_z.abs() + pr.end_lift) / pr.feed_z)
             * 60.0;
     }
     Stats { draw_mm: draw, travel_mm: travel, strokes: n, lifts: n, time_s: t }
@@ -137,7 +134,11 @@ pub fn generate_gcode(strokes: &[Vec<Point>], s: &Settings, header: &[String], i
         format!(" (NOT MEASURED, {} used)", if pr.use_work_area { "printer work area" } else { "sheet size" })
     };
     lines.extend([
-        format!("; pen up Z{up} down Z{down}, feed draw {fd} travel {ft} z {fz}, simplify {}", fmt(pr.simplify_tol)),
+        format!(
+            "; pen up Z{up} down Z{down}, end Z{}, feed draw {fd} travel {ft} z {fz}, simplify {}",
+            fmt(pr.pen_up_z + pr.end_lift),
+            fmt(pr.simplify_tol)
+        ),
         format!(
             "; travel X{}..{} Y{}..{}{measured}, flip_x {} flip_y {}",
             fmt(bx.x_min),
@@ -167,8 +168,7 @@ pub fn generate_gcode(strokes: &[Vec<Point>], s: &Settings, header: &[String], i
         }
         lines.push(format!("G0 Z{up} F{fz}"));
     }
-    lines.push(format!("G0 Z{up} F{fz}"));
-    lines.push(format!("G0 X0.00 Y0.00 F{ft}"));
+    lines.push(format!("G0 Z{} F{fz}", fmt(pr.pen_up_z + pr.end_lift)));
     lines.push("M400".into());
     let mut out = lines.join("\n");
     out.push('\n');

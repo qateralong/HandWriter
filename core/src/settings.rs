@@ -201,6 +201,7 @@ impl Default for TableSetup {
 pub struct Printer {
     pub pen_up_z: f64,
     pub pen_down_z: f64,
+    pub end_lift: f64,
     pub feed_draw: f64,
     pub feed_travel: f64,
     pub feed_z: f64,
@@ -222,6 +223,7 @@ impl Default for Printer {
         Self {
             pen_up_z: 4.0,
             pen_down_z: -1.0,
+            end_lift: 10.0,
             feed_draw: 1200.0,
             feed_travel: 3000.0,
             feed_z: 600.0,
@@ -717,6 +719,7 @@ impl Settings {
         r("printer.table.pause_s", pr.table.pause_s, Ge(0.0), Some(60.0));
         r("printer.work_w", pr.work_w, Gt(0.0), Some(2000.0));
         r("printer.work_h", pr.work_h, Gt(0.0), Some(2000.0));
+        r("printer.end_lift", pr.end_lift, Ge(0.0), Some(100.0));
 
         let o = &self.outline;
         r("outline.px_per_em", o.px_per_em, Ge(200.0), Some(4000.0));

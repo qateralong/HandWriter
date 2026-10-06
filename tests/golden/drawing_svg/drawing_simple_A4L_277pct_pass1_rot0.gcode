@@ -9,9 +9,9 @@
 ; frame: off
 ; line weights: off (single pass for all lines)
 ; curves 0.05 mm, join 0.05 mm, long paths first >= 30.00 mm
-; pen up Z4.00 down Z-1.00, feed draw 1200 travel 3000 z 600, simplify 0.05
+; pen up Z4.00 down Z-1.00, end Z14.00, feed draw 1200 travel 3000 z 600, simplify 0.05
 ; travel X-2.00..300.00 Y-2.00..300.00, flip_x 0 flip_y 0
-; strokes 5, draw 1552 mm, travel 438 mm, est 1.5 min
+; strokes 5, draw 1552 mm, travel 273 mm, est 1.5 min
 G21
 G90
 M104 S0
@@ -154,6 +154,5 @@ G1 Z-1.00 F600
 G1 X65.40 Y132.70 F1200
 G1 X37.70 Y160.40
 G0 Z4.00 F600
-G0 Z4.00 F600
-G0 X0.00 Y0.00 F3000
+G0 Z14.00 F600
 M400

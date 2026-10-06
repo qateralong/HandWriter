@@ -2,9 +2,9 @@
 ; TEST: writing area rectangle + axis arrows (X long, Y short)
 ; sheet 165.00x205.00 mm, margins L20.00 R8.00, first line 15.00, bottom 10.00, pitch 10.00
 ; size 3.00 mm, baseline shift 0.00, dx 0.00 dy 0.00, rotation 0.00 deg
-; pen up Z4.00 down Z-1.00, feed draw 1200 travel 3000 z 600, simplify 0.05
+; pen up Z4.00 down Z-1.00, end Z14.00, feed draw 1200 travel 3000 z 600, simplify 0.05
 ; travel X-2.00..200.00 Y-2.00..230.00, flip_x 0 flip_y 0
-; strokes 22, draw 759 mm, travel 450 mm, est 1.2 min
+; strokes 22, draw 759 mm, travel 427 mm, est 1.2 min
 G21
 G90
 M104 S0
@@ -106,6 +106,5 @@ G1 Z-1.00 F600
 G1 X5.00 Y25.00 F1200
 G1 X6.80 Y22.00
 G0 Z4.00 F600
-G0 Z4.00 F600
-G0 X0.00 Y0.00 F3000
+G0 Z14.00 F600
 M400

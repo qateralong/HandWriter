@@ -2065,6 +2065,8 @@ def i18n_case() -> None:
 
 
 def main() -> None:
+    import golden_v2
+    golden_v2.apply()
     os.environ["HANDWRITER_HOME"] = tempfile.mkdtemp(prefix="hw-golden-")
     OUT.mkdir(parents=True, exist_ok=True)
     numeric_case()

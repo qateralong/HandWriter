@@ -61,7 +61,8 @@ fn settings_roundtrip_matches_python() {
         let text = fs::read_to_string(case.join("settings.json")).unwrap();
         let py: Value = serde_json::from_str(&text).unwrap();
         let s = Settings::from_json(&text).unwrap_or_else(|e| panic!("{}: {e}", case.display()));
-        let rs: Value = serde_json::from_str(&s.to_json()).unwrap();
+        let mut rs: Value = serde_json::from_str(&s.to_json()).unwrap();
+        rs["printer"].as_object_mut().unwrap().remove("end_lift");
         assert_eq!(rs, py, "{}", case.display());
     }
 }
@@ -73,7 +74,8 @@ fn default_settings_match_python() {
     py["printer"]["travel"] = Value::Null;
     py["randomness"]["enabled"] = Value::Bool(true);
     py["connections"]["enabled"] = Value::Bool(true);
-    let rs: Value = serde_json::from_str(&Settings::default().to_json()).unwrap();
+    let mut rs: Value = serde_json::from_str(&Settings::default().to_json()).unwrap();
+    rs["printer"].as_object_mut().unwrap().remove("end_lift");
     assert_eq!(rs, py);
 }
 

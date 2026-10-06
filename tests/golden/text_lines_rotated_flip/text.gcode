@@ -7,9 +7,9 @@
 ; next sheet: text finished
 ; sheet 165.00x205.00 mm, margins L20.00 R8.00, first line 16.00, bottom 10.00, pitch 8.00
 ; size 2.50 mm, baseline shift 0.30, dx 0.70 dy -0.40, rotation 1.50 deg
-; pen up Z4.00 down Z-1.00, feed draw 1200 travel 3000 z 600, simplify 0.05
+; pen up Z4.00 down Z-1.00, end Z14.00, feed draw 1200 travel 3000 z 600, simplify 0.05
 ; travel X-2.00..200.00 Y-230.00..2.00, flip_x 0 flip_y 1
-; strokes 874, draw 2485 mm, travel 3687 mm, est 17.9 min
+; strokes 874, draw 2485 mm, travel 3547 mm, est 17.8 min
 G21
 G90
 M104 S0
@@ -5699,6 +5699,5 @@ G1 X39.36 Y-133.98
 G1 X39.54 Y-134.14
 G1 X39.37 Y-134.29
 G0 Z4.00 F600
-G0 Z4.00 F600
-G0 X0.00 Y0.00 F3000
+G0 Z14.00 F600
 M400

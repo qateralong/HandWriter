@@ -11,9 +11,9 @@
 ; frame GOST 2.104 form 1: L20.00 R5.00 T5.00 B5.00, title block 185.00x55.00
 ; line weights: off (single pass for all lines)
 ; curves 0.05 mm, join 0.05 mm, long paths first >= 30.00 mm
-; pen up Z4.00 down Z-1.00, feed draw 1200 travel 3000 z 600, simplify 0.05
+; pen up Z4.00 down Z-1.00, end Z14.00, feed draw 1200 travel 3000 z 600, simplify 0.05
 ; travel X0.00..239.00 Y0.00..190.00, flip_x 0 flip_y 0
-; strokes 118, draw 1345 mm, travel 496 mm, est 3.3 min
+; strokes 118, draw 1345 mm, travel 461 mm, est 3.3 min
 G21
 G90
 M104 S0
@@ -501,6 +501,5 @@ G0 X35.00 Y3.50 F3000
 G1 Z-1.00 F600
 G1 X35.00 Y6.50 F1200
 G0 Z4.00 F600
-G0 Z4.00 F600
-G0 X0.00 Y0.00 F3000
+G0 Z14.00 F600
 M400

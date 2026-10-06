@@ -1313,9 +1313,6 @@ fn travel_on_sheet(strokes: &[Vec<Point>], start: Point) -> Vec<(Point, Point)> 
             cur = st[st.len() - 1];
         }
     }
-    if cur != start {
-        moves.push((cur, start));
-    }
     moves
 }
 

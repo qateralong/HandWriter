@@ -88,7 +88,7 @@ pub fn make_reach_check_gcode(s: &Settings) -> Result<String, Vec<String>> {
             lines.push(format!("G4 P{pause_ms}"));
         }
     }
-    lines.extend([format!("G0 Z{up} F{fz}"), format!("G0 X0.00 Y0.00 F{ft}"), "M400".into()]);
+    lines.extend([format!("G0 Z{} F{fz}", fmt(pr.pen_up_z + pr.end_lift)), "M400".into()]);
     Ok(lines.join("\n") + "\n")
 }
 

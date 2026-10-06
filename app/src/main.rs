@@ -166,6 +166,11 @@ fn main() {
         }
     };
     logs::setup(true);
+    if std::env::var_os("HANDWRITER_LANG").is_none_or(|v| v.is_empty())
+        && let Ok(l) = std::fs::read_to_string(paths::lang_path())
+    {
+        handwriter_core::i18n::set_lang(l.trim());
+    }
     if args.selftest {
         std::process::exit(selftest::run(args.report.clone()));
     }

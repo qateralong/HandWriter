@@ -67,7 +67,7 @@ function showMessages(errors, warnings) {
 let saveTimer = 0;
 function saveSettings() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => api("PUT", "/api/settings", state.settings).catch(() => { }), 400);
+  saveTimer = setTimeout(() => api("PUT", "/api/settings", state.settings).catch((e) => showMessages(e.data?.errors || [e.message], [])), 400);
 }
 
 let previewSeq = 0;
@@ -90,6 +90,7 @@ async function refreshPreview() {
     busy(false);
   }
   renderChrome();
+  syncForms();
   draw();
 }
 
@@ -193,6 +194,22 @@ function drawSheet(box, part, caption) {
       ctx.lineWidth = thick ? base * 1.7 : base;
       ctx.stroke();
     }
+  }
+
+  if (state.settings?.drawing.show_travel && p.travel?.length) {
+    ctx.save();
+    ctx.setLineDash([3, 4]);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = css("--travel");
+    ctx.beginPath();
+    for (const [a, b, k] of p.travel) {
+      if (part && k !== part.index) continue;
+      const pa = T(a), pb = T(b);
+      ctx.moveTo(pa[0], pa[1]);
+      ctx.lineTo(pb[0], pb[1]);
+    }
+    ctx.stroke();
+    ctx.restore();
   }
 
   if (caption) {
@@ -307,16 +324,177 @@ addEventListener("keydown", (e) => {
   if (e.key === "ArrowRight") setPass(state.pass + 1);
 });
 
-$("settingsBtn").onclick = (e) => {
-  e.stopPropagation();
-  $("settingsPop").hidden = !$("settingsPop").hidden;
-};
-document.addEventListener("click", (e) => {
-  const pop = $("settingsPop");
-  if (!pop.hidden && !pop.contains(e.target)) pop.hidden = true;
+let quickItems = [];
+let settingsItems = [];
+let activeTab = localGet("hw-tab") || "main";
+let lastTravel = null;
+let appInfo = { lang: "ru", langs: [["ru", "Русский"], ["en", "English"]] };
+
+function specialOptions(item) {
+  const { f, input } = item;
+  let opts = null;
+  if (f.type === "file") opts = (state.files || []).map((x) => [x.spec, x.label]);
+  if (f.type === "theme") opts = [["auto", "как в системе"], ["light", "светлая"], ["dark", "тёмная"]];
+  if (f.type === "lang") opts = appInfo.langs;
+  if (!opts) return;
+  const key = JSON.stringify(opts);
+  if (input.dataset.opts === key) return;
+  input.dataset.opts = key;
+  input.innerHTML = "";
+  for (const [v, t] of opts) {
+    const o = document.createElement("option");
+    o.value = v;
+    o.textContent = t;
+    input.appendChild(o);
+  }
+}
+
+function itemValue(item) {
+  const S = state.settings;
+  switch (item.f.type) {
+    case "file": return S.drawing.file;
+    case "theme": return localGet("hw-theme") || "auto";
+    case "lang": return appInfo.lang;
+    case "travel": return !!S.printer.travel;
+    default: return fieldValue(item.f, S);
+  }
+}
+
+function syncForms() {
+  const S = state.settings, P = state.preview;
+  if (!S) return;
+  const groups = new Map();
+  for (const item of [...quickItems, ...settingsItems]) {
+    const { f, g, row, input } = item;
+    specialOptions(item);
+    const visible = (!g.show || g.show(S, P)) && (!f.show || f.show(S, P));
+    row.hidden = !visible;
+    if (row.nextElementSibling?.classList.contains("fhint")) row.nextElementSibling.hidden = !visible;
+    input.disabled = !!f.disabled?.(S, P);
+    if (!groups.has(item.group)) groups.set(item.group, false);
+    if (visible) groups.set(item.group, true);
+    if (document.activeElement === input) continue;
+    const v = itemValue(item);
+    if (input.type === "checkbox") input.checked = !!v;
+    else input.value = v == null ? "" : String(v);
+  }
+  for (const [box, any] of groups) box.hidden = !any;
+}
+
+let previewTimer = 0;
+function schedulePreview() {
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(refreshPreview, 250);
+}
+
+async function onFieldChange(item) {
+  const S = state.settings;
+  const { f, input } = item;
+  if (f.type === "theme") {
+    localPut("hw-theme", input.value);
+    window.hwApplyTheme();
+    return;
+  }
+  if (f.type === "lang") {
+    try {
+      await api("PUT", "/api/app", { lang: input.value });
+      await flushSave();
+      location.reload();
+    } catch (e) {
+      toast("Язык не переключился: " + e.message);
+    }
+    return;
+  }
+  if (f.type === "file") {
+    S.drawing.file = input.value;
+    S.drawing.imp.pdf_page = 1;
+    S.drawing.weights.layers = {};
+    state.pass = 1;
+    state.zoom = { f: 1, px: 0, py: 0 };
+  } else if (f.type === "travel") {
+    if (input.checked) {
+      S.printer.travel = lastTravel || { x_min: 0, x_max: S.printer.work_w, y_min: 0, y_max: S.printer.work_h };
+    } else {
+      lastTravel = S.printer.travel;
+      S.printer.travel = null;
+    }
+  } else {
+    const r = readInput(item);
+    if (!r.ok) return;
+    if (f.set) f.set(S, r.v);
+    else setPath(S, f.path, r.v);
+    f.onSet?.(S, state.preview);
+    if (f.path?.startsWith("printer.travel.")) lastTravel = { ...S.printer.travel };
+  }
+  syncForms();
+  saveSettings();
+  if (f.redraw) draw();
+  else schedulePreview();
+}
+
+async function flushSave() {
+  clearTimeout(saveTimer);
+  if (state.settings) await api("PUT", "/api/settings", state.settings).catch(() => { });
+}
+
+function buildForms() {
+  quickItems = buildForm($("quickForm"), QUICK, { change: onFieldChange });
+  const nav = $("settingsTabs");
+  nav.innerHTML = "";
+  for (const t of TABS) {
+    const b = document.createElement("button");
+    b.textContent = t.title;
+    b.dataset.tab = t.id;
+    b.onclick = () => showTab(t.id);
+    nav.appendChild(b);
+  }
+  showTab(activeTab);
+}
+
+function showTab(id) {
+  const tab = TABS.find((t) => t.id === id) || TABS[0];
+  activeTab = tab.id;
+  localPut("hw-tab", tab.id);
+  for (const b of $("settingsTabs").children) b.classList.toggle("on", b.dataset.tab === tab.id);
+  $("settingsTitle").textContent = tab.title;
+  settingsItems = buildForm($("settingsForm"), tab.groups, { change: onFieldChange });
+  syncForms();
+}
+
+function openSettings(open) {
+  $("settingsPanel").hidden = !open;
+  if (open) {
+    $("paramsPop").hidden = true;
+    syncForms();
+  }
+}
+$("settingsBtn").onclick = () => openSettings(true);
+$("settingsClose").onclick = () => openSettings(false);
+$("settingsPanel").addEventListener("mousedown", (e) => { if (e.target === $("settingsPanel")) openSettings(false); });
+
+function openParams(open) {
+  $("paramsPop").hidden = !open;
+  $("paramsBtn").setAttribute("aria-expanded", String(open));
+  if (open) syncForms();
+}
+$("paramsBtn").onclick = (e) => { e.stopPropagation(); openParams($("paramsPop").hidden); };
+$("paramsClose").onclick = () => openParams(false);
+document.addEventListener("mousedown", (e) => {
+  const pop = $("paramsPop");
+  if (!pop.hidden && !pop.contains(e.target) && !$("paramsBtn").contains(e.target)) openParams(false);
 });
-$("themeSel").value = localGet("hw-theme") || "auto";
-$("themeSel").onchange = () => { localPut("hw-theme", $("themeSel").value); window.hwApplyTheme(); };
+addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (!$("settingsPanel").hidden) openSettings(false);
+  else if (!$("paramsPop").hidden) openParams(false);
+});
+async function loadFiles() {
+  try {
+    state.files = await api("GET", "/api/drawing/files");
+  } catch {
+    state.files = [];
+  }
+}
 
 $("fileInput").addEventListener("change", async (e) => {
   const f = e.target.files[0];
@@ -328,6 +506,7 @@ $("fileInput").addEventListener("change", async (e) => {
   busy(true, "загружаю…");
   try {
     const r = await api("POST", "/api/drawing/upload", { filename: f.name, content_b64: btoa(bin) });
+    await loadFiles();
     const dr = state.settings.drawing;
     dr.file = r.spec;
     dr.imp.pdf_page = 1;
@@ -335,6 +514,7 @@ $("fileInput").addEventListener("change", async (e) => {
     state.pass = 1;
     state.zoom = { f: 1, px: 0, py: 0 };
     saveSettings();
+    syncForms();
     await refreshPreview();
   } catch (err) {
     showMessages(["Файл не загружен: " + err.message], []);
@@ -350,6 +530,7 @@ function fileNameFrom(resp, fallback) {
 }
 
 $("downloadBtn").onclick = async () => {
+  await flushSave();
   const tests = state.settings.drawing.test_files !== false;
   busy(true, "готовлю архив…");
   try {
@@ -387,5 +568,15 @@ $("downloadBtn").onclick = async () => {
     showMessages(["Настройки не загрузились: " + e.message], []);
     return;
   }
+  try {
+    appInfo = await api("GET", "/api/app");
+  } catch { }
+  await loadFiles();
+  const q = new URLSearchParams(location.search);
+  if (q.get("tab")) activeTab = q.get("tab");
+  buildForms();
+  syncForms();
   await refreshPreview();
+  if (q.get("open") === "settings") openSettings(true);
+  if (q.get("open") === "params") openParams(true);
 })();

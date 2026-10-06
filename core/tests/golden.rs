@@ -63,6 +63,7 @@ fn settings_roundtrip_matches_python() {
         let s = Settings::from_json(&text).unwrap_or_else(|e| panic!("{}: {e}", case.display()));
         let mut rs: Value = serde_json::from_str(&s.to_json()).unwrap();
         rs["printer"].as_object_mut().unwrap().remove("end_lift");
+        rs["drawing"].as_object_mut().unwrap().remove("test_files");
         assert_eq!(rs, py, "{}", case.display());
     }
 }
@@ -76,6 +77,7 @@ fn default_settings_match_python() {
     py["connections"]["enabled"] = Value::Bool(true);
     let mut rs: Value = serde_json::from_str(&Settings::default().to_json()).unwrap();
     rs["printer"].as_object_mut().unwrap().remove("end_lift");
+    rs["drawing"].as_object_mut().unwrap().remove("test_files");
     assert_eq!(rs, py);
 }
 

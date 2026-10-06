@@ -103,3 +103,7 @@ pub fn unique_path(dir: &std::path::Path, name: &str) -> PathBuf {
     let (stem, ext) = name.rsplit_once('.').map_or((name, String::new()), |(s, e)| (s, format!(".{e}")));
     (2..).map(|i| dir.join(format!("{stem} ({i}){ext}"))).find(|p| !p.exists()).expect("free name")
 }
+
+pub fn lang_path() -> PathBuf {
+    user_dir().join("lang.txt")
+}

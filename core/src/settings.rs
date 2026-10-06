@@ -545,6 +545,7 @@ pub struct DrawingSettings {
     pub marked: MarkedSheet,
     pub a3: A3Sheet,
     pub show_travel: bool,
+    pub test_files: bool,
 }
 
 impl Default for DrawingSettings {
@@ -561,6 +562,7 @@ impl Default for DrawingSettings {
             marked: MarkedSheet::default(),
             a3: A3Sheet::default(),
             show_travel: true,
+            test_files: true,
         }
     }
 }

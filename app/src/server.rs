@@ -596,6 +596,7 @@ pub fn router(state: St) -> Router {
         .route("/static/{name}", get(static_handler))
         .route("/api/settings", get(get_settings).put(put_settings))
         .route("/api/defaults", get(get_defaults))
+        .route("/api/app", get(get_app).put(put_app))
         .route("/api/preview", post(|b: Bytes| async move { with_settings("/api/preview", b, text_preview).await }))
         .route("/api/gcode", post(|b: Bytes| async move { with_settings("/api/gcode", b, text_gcode).await }))
         .route("/api/testfile", post(|b: Bytes| async move { with_settings("/api/testfile", b, testfile).await }))
@@ -787,4 +788,28 @@ async fn drawing_upload(b: Bytes) -> Response {
         }
     })
     .await
+}
+
+async fn get_app() -> Response {
+    ok(json!({"lang": lang(), "langs": [["ru", "Русский"], ["en", "English"]], "version": env!("CARGO_PKG_VERSION")}))
+}
+
+#[derive(Deserialize)]
+struct AppPrefs {
+    lang: String,
+}
+
+async fn put_app(b: Bytes) -> Response {
+    let prefs: AppPrefs = match parse_body("/api/app", &b) {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+    if !handwriter_core::i18n::LANGS.contains(&prefs.lang.as_str()) {
+        return detail(StatusCode::BAD_REQUEST, "Неизвестный язык");
+    }
+    if let Err(e) = std::fs::write(crate::paths::lang_path(), &prefs.lang) {
+        return detail(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string());
+    }
+    handwriter_core::i18n::set_lang(&prefs.lang);
+    ok(json!({"ok": true, "lang": prefs.lang}))
 }

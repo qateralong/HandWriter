@@ -55,6 +55,7 @@ pub fn load_drawing(spec: &str, imp: &DrawingImport, tol_mm: f64, drawings_dir: 
     };
     match kind {
         "svg" => import_svg(&data, &file_name, imp, tol_mm),
+        "pdf" => crate::drawing::pdf_import::import_pdf(&data, &file_name, imp, tol_mm),
         "dxf" => crate::dxf::import_dxf(&data, &file_name, imp, tol_mm),
         "raster" => crate::drawing::raster_import::import_raster(&data, &file_name, imp),
         _ => {

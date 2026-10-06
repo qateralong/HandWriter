@@ -1,6 +1,7 @@
 pub mod model;
 pub mod ops;
 pub mod passes;
+pub mod pdf_import;
 pub mod pipeline;
 pub mod place;
 pub mod raster_import;

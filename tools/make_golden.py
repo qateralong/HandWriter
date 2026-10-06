@@ -1875,6 +1875,164 @@ def dxf_case() -> None:
     print(f"dxf: {len(imports)} imports")
 
 
+def pdf_inputs() -> dict:
+    import pymupdf
+
+    out = {}
+
+    def page_shapes(page, k=0):
+        page.draw_line((50, 50), (300, 80), color=(0, 0, 0), width=0.7)
+        page.draw_line((50, 90), (300, 90), color=(1, 0, 0), width=0.3, dashes="[6 2] 0")
+        page.draw_line((50, 100), (300, 100), color=(0, 0, 1), width=1.5, dashes="[3 1.5 0.5 1.5] 1")
+        page.draw_bezier((50, 120), (100, 200), (200, 50), (300, 150), color=(0, 0.5, 0), width=0.5)
+        page.draw_rect(pymupdf.Rect(60, 200, 160, 260), color=(0, 0, 0), width=0.4)
+        page.draw_rect(pymupdf.Rect(170, 200, 190, 215), color=None, fill=(0, 0, 0))
+        page.draw_rect(pymupdf.Rect(200, 200, 260, 260), color=(0, 0, 0), fill=(0.8, 0.2, 0.2), width=1)
+        page.draw_rect(pymupdf.Rect(0, 0, 595, 842), color=None, fill=(1, 1, 1), overlay=False)
+        page.draw_quad(pymupdf.Quad((300, 300), (380, 310), (290, 380), (370, 395)), color=(0, 0, 0), width=0.6)
+        page.draw_polyline([(50, 400), (90, 430), (130, 400), (170, 440)], color=(0, 0, 0), width=0.5)
+        page.draw_polyline([(200, 400), (240, 430), (280, 400)], color=(0, 0, 0), fill=(0, 0, 0), closePath=True)
+        page.draw_circle((400, 500), 30, color=(0, 0, 0), width=0.5)
+        page.draw_circle((480, 500), 4, color=None, fill=(0, 0, 0))
+        page.draw_oval(pymupdf.Rect(300, 550, 450, 620), color=(0.5, 0.5, 0.5), width=2)
+        page.draw_sector((150, 650), (200, 650), 120, color=(0, 0, 0), fill=(0.1, 0.1, 0.1))
+        page.draw_line((50, 700), (300, 700), color=(1, 1, 1), width=1)
+        page.draw_line((50, 710 + k), (300, 712), color=(0.2, 0.2, 0.2), width=0)
+        page.draw_squiggle((50, 740), (300, 760), color=(0, 0, 0))
+        page.draw_zigzag((50, 780), (300, 790), color=(0, 0, 0))
+
+    doc = pymupdf.open()
+    page_shapes(doc.new_page())
+    out["shapes.pdf"] = doc.tobytes()
+
+    doc = pymupdf.open()
+    page = doc.new_page(width=420, height=297)
+    page.insert_text((40, 60), "Hello, Чертёж!", fontsize=12, fontname="helv")
+    page.insert_text((40, 90), "Times  Roman   text", fontsize=10, fontname="tiro")
+    page.insert_text((40, 120), "Courier", fontsize=14, fontname="cour")
+    page.insert_text((200, 200), "Rotated", fontsize=11, fontname="helv", rotate=90)
+    page.insert_text((300, 150), "Upside", fontsize=9, fontname="helv", rotate=180)
+    page.insert_text((40, 160), "x2 small", fontsize=6, fontname="tiro")
+    page.insert_text((40, 180), "tab\there  and  nbsp", fontsize=8, fontname="helv")
+    page.insert_textbox(pymupdf.Rect(40, 200, 200, 280), "Box text with several words that wrap around", fontsize=9)
+    page.draw_line((40, 62), (150, 62), color=(0, 0, 0), width=0.3)
+    out["text.pdf"] = doc.tobytes()
+
+    doc = pymupdf.open()
+    for rot in (0, 90, 180, 270):
+        page = doc.new_page(width=300, height=200)
+        page.draw_line((20, 20), (200, 60), color=(0, 0, 0), width=0.5)
+        page.draw_rect(pymupdf.Rect(30, 80, 120, 150), color=(0, 0, 0), width=0.5)
+        page.insert_text((40, 180), f"rot {rot}", fontsize=10)
+        page.set_rotation(rot)
+    out["rotated.pdf"] = doc.tobytes()
+
+    doc = pymupdf.open()
+    page = doc.new_page()
+    ocg1 = doc.add_ocg("Contour", on=True)
+    ocg2 = doc.add_ocg("Hidden", on=False)
+    page.draw_line((50, 50), (300, 50), color=(0, 0, 0), oc=ocg1)
+    page.draw_line((50, 60), (300, 60), color=(0, 0, 0), oc=ocg2)
+    page.draw_rect(pymupdf.Rect(50, 70, 90, 110), color=(0, 0, 0), oc=ocg1)
+    page.draw_line((50, 120), (300, 120), color=(0, 0, 0))
+    out["layers.pdf"] = doc.tobytes()
+
+    doc = pymupdf.open()
+    page = doc.new_page(width=200, height=200)
+    import zlib, struct
+    def png(w, h):
+        raw = b"".join(b"\x00" + bytes([(x * 7 + y * 3) % 256 for x in range(w)]) for y in range(h))
+        def chunk(t, d):
+            return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)
+        return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 0, 0, 0, 0))
+                + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+    page.insert_image(pymupdf.Rect(20, 20, 120, 90), stream=png(16, 12))
+    page.draw_line((20, 150), (180, 150), color=(0, 0, 0))
+    out["image.pdf"] = doc.tobytes()
+
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.set_cropbox(pymupdf.Rect(100, 100, 400, 500))
+    page.draw_line((120, 120), (380, 480), color=(0, 0, 0), width=0.5)
+    page.draw_line((0, 0), (595, 842), color=(0, 0, 0), width=0.5)
+    page.insert_text((150, 300), "cropped", fontsize=10)
+    page.insert_text((10, 30), "outside", fontsize=10)
+    out["cropbox.pdf"] = doc.tobytes()
+
+    doc = pymupdf.open()
+    page = doc.new_page()
+    sh = page.new_shape()
+    sh.draw_line((100, 100), (200, 100))
+    sh.draw_line((200, 100), (200, 200))
+    sh.draw_line((200, 200), (100, 200))
+    sh.draw_line((100, 200), (100, 100))
+    sh.finish(color=(0, 0, 0), width=0.8, closePath=False)
+    sh.draw_line((250, 100), (350, 120))
+    sh.draw_line((350, 120), (330, 200))
+    sh.draw_line((330, 200), (240, 190))
+    sh.draw_line((240, 190), (250, 100))
+    sh.finish(color=(0, 0, 0), fill=(0.3, 0.3, 0.3))
+    sh.draw_curve((100, 300), (150, 250), (200, 300))
+    sh.draw_curve((200, 300), (250, 350), (300, 300))
+    sh.finish(color=(0, 0, 0), closePath=True)
+    sh.draw_rect(pymupdf.Rect(400, 400, 402, 401))
+    sh.finish(color=None, fill=(0, 0, 0))
+    sh.draw_line((50, 500), (51, 500.0000001))
+    sh.finish(color=(0, 0, 0), width=3, lineCap=1)
+    sh.commit()
+    page2 = doc.new_page(width=100, height=100)
+    page2.draw_line((10, 10), (90, 90), color=(0, 0, 0))
+    out["shape_paths.pdf"] = doc.tobytes()
+
+    doc = pymupdf.open()
+    doc.new_page()
+    p = doc.new_page()
+    page_shapes(p, 3)
+    p.insert_text((100, 600), "second page", fontsize=12)
+    out["two_pages.pdf"] = doc.tobytes()
+
+    out["empty.pdf"] = b""
+    out["garbage.pdf"] = b"garbage"
+    out["noobj.pdf"] = b"%PDF-1.4\n%%EOF"
+    out["nopages.pdf"] = b"%PDF-1.4\n1 0 obj <<>> endobj\ntrailer <</Root 1 0 R>>\n%%EOF"
+    return out
+
+
+PDF_RESOURCES = ["test_5054.pdf", "test2238.pdf", "test_4564.pdf", "test_4043.pdf", "bug1971.pdf",
+                 "test_4415.pdf", "test-3591.pdf", "test_4928.pdf", "symbol-list.pdf", "test_4936.pdf",
+                 "test_4712_a.pdf", "test-2812.pdf", "test_2969.pdf", "small-table.pdf", "test_2730.pdf",
+                 "test_4004.pdf", "widgettest.pdf", "type3font.pdf", "test-3150.pdf", "test_2742.pdf",
+                 "test_3569.pdf", "text-find-ligatures.pdf", "test-linebreaks.pdf", "github_sample.pdf",
+                 "img-regular.pdf", "img-transparent.pdf", "has-bad-fonts.pdf", "quad-calc-0.pdf",
+                 "test-2462.pdf", "test_3448.pdf", "test-3143.pdf"]
+
+
+def dump_pdf_case(d: Path, inputs: dict) -> list:
+    from handwriter.drawing.pdf_import import import_pdf
+    from handwriter.settings import DrawingImport
+
+    imports = []
+    for fname, data in inputs.items():
+        (d / "input" / fname).write_bytes(data)
+        for page, tol, fills in ((1, 0.05, False), (2, 0.5, True)):
+            imp = DrawingImport(pdf_page=page, fill_centerlines=fills)
+            imports.append({"file": fname, "page": page, "tol": tol, "fills": fills,
+                            "result": dump_import(import_pdf(data, fname, imp, tol))})
+    return imports
+
+
+def pdf_case() -> None:
+    d = OUT / "pdf"
+    res_dir = Path(os.environ.get("PYMUPDF_RESOURCES") or d / "input")
+    resources = {name: (res_dir / name).read_bytes() for name in PDF_RESOURCES if (res_dir / name).exists()}
+    shutil.rmtree(d, ignore_errors=True)
+    (d / "input").mkdir(parents=True)
+    inputs = pdf_inputs() | resources
+    imports = dump_pdf_case(d, inputs)
+    (d / "cases.json").write_text(json.dumps({"imports": imports}, ensure_ascii=False), encoding="utf-8")
+    print(f"pdf: {len(imports)} imports")
+
+
 def main() -> None:
     os.environ["HANDWRITER_HOME"] = tempfile.mkdtemp(prefix="hw-golden-")
     OUT.mkdir(parents=True, exist_ok=True)
@@ -1893,6 +2051,7 @@ def main() -> None:
     raster_case()
     outline_font_case()
     dxf_case()
+    pdf_case()
     shutil.copy(TEST_FONTS / "BadScript-Regular.ttf", user_fonts_dir())
 
     save_case("text_default", text_settings(), text_run)

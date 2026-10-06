@@ -1,0 +1,5 @@
+Name: libjpeg
+Description: mozjpeg headers so that MuPDF shares the libjpeg linked by mozjpeg-sys
+Version: 6.2
+Cflags: -I${pcfiledir}
+Libs:

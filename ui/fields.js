@@ -79,6 +79,125 @@ const QUICK = [
   },
 ];
 
+const isOutlines = (S) => S.mode === "outlines";
+
+const HAND = [
+  {
+    title: "Шрифт",
+    fields: [
+      { type: "font", label: "Шрифт" },
+      { type: "fontUpload", label: "Загрузить шрифт (TTF, OTF, SVG)" },
+    ],
+  },
+  {
+    title: "Тетрадь",
+    fields: [
+      { type: "profile", label: "Тетрадь" },
+      num("typography.size_mm", "Высота строчной буквы", { unit: "мм", step: 0.1, min: 0.5 }),
+      sel("sheet.ruling", "Линовка", [["grid", "клетка"], ["lines", "линейка"], ["none", "нет"]]),
+      bool("typography.hyphenate", "Автоперенос слов"),
+    ],
+  },
+  {
+    title: "Живость почерка",
+    fields: [
+      bool("randomness.enabled", "Случайные отклонения"),
+      bool("randomness.variants", "Разные варианты одной буквы", { show: (S) => S.randomness.enabled }),
+      { type: "seed", label: "Другой случайный рисунок", show: (S) => S.randomness.enabled },
+      bool("connections.enabled", "Соединять буквы"),
+    ],
+  },
+  {
+    title: "Проверка",
+    fields: [{ type: "testFile", label: "Скачать тестовый файл (рамка поля письма и оси)" }],
+  },
+];
+
+const randomField = (key, label, max, step, unit) =>
+  num(`randomness.${key}`, label, { unit, step, min: 0, max, show: (S) => S.randomness.enabled });
+
+const NOTEBOOK_TABS = [
+  {
+    id: "sheet",
+    title: "Тетрадь",
+    groups: [
+      {
+        title: "Лист",
+        fields: [
+          num("sheet.width", "Ширина", { unit: "мм", step: 0.5 }),
+          num("sheet.height", "Высота", { unit: "мм", step: 0.5 }),
+          num("sheet.margin_left", "Левое поле", { unit: "мм", step: 0.5 }),
+          num("sheet.margin_right", "Правое поле", { unit: "мм", step: 0.5 }),
+          num("sheet.first_line_top", "От верха до первой строки", { unit: "мм", step: 0.5 }),
+          num("sheet.bottom_limit", "Нижний предел (от низа)", { unit: "мм", step: 0.5 }),
+          num("sheet.line_pitch", "Шаг строк", { unit: "мм", step: 0.5 }),
+          num("sheet.indent", "Красная строка", { unit: "мм", step: 0.5 }),
+          num("sheet.grid_step", "Шаг клетки", { unit: "мм", step: 0.5, show: (S) => S.sheet.ruling === "grid" }),
+        ],
+      },
+      {
+        title: "Поправки",
+        fields: [
+          num("typography.baseline_shift", "Сдвиг букв над строкой", { unit: "мм", step: 0.1 }),
+          num("typography.dx", "Сдвиг текста по X", { unit: "мм", step: 0.1 }),
+          num("typography.dy", "Сдвиг текста по Y", { unit: "мм", step: 0.1 }),
+          num("typography.rotation_deg", "Поворот текста", { unit: "°", step: 0.1,
+            hint: "Против часовой стрелки — плюс, вокруг угла листа." }),
+        ],
+      },
+      {
+        title: "Вид листа",
+        fields: [
+          bool("preview.show_ruling", "Показывать линовку", { redraw: true }),
+          bool("preview.show_travel", "Показывать холостые ходы", { redraw: true }),
+        ],
+      },
+    ],
+  },
+  {
+    id: "hand",
+    title: "Почерк",
+    groups: [
+      {
+        title: "Случайность",
+        fields: [
+          bool("randomness.enabled", "Случайные отклонения"),
+          num("randomness.seed", "Номер случайного рисунка", { step: 1, int: true, show: (S) => S.randomness.enabled }),
+          randomField("size", "Размер каждой буквы, ±", 30, 0.5, "%"),
+          randomField("slant", "Наклон каждой буквы, ±", 20, 0.1, "°"),
+          randomField("offset", "Смещение буквы по высоте, ±", 3, 0.05, "мм"),
+          randomField("letter_spacing", "Межбуквенный интервал, ±", 50, 0.5, "%"),
+          randomField("word_spacing", "Межсловный интервал, ±", 100, 1, "%"),
+          randomField("drift", "Уплывание строки, ±", 5, 0.05, "мм"),
+          randomField("line_start", "Начало строки, ±", 10, 0.1, "мм"),
+          randomField("right_edge", "Правый край, ±", 8, 0.1, "мм"),
+          randomField("jitter", "Дрожание линии", 0.5, 0.01, "мм"),
+        ],
+      },
+      {
+        title: "Связки",
+        fields: [
+          bool("connections.enabled", "Соединять буквы"),
+          num("connections.distance", "Соединять, если ближе (доля высоты строчной)", { step: 0.01, min: 0, max: 0.6,
+            show: (S) => S.connections.enabled }),
+        ],
+      },
+      {
+        title: "Контурные шрифты (TTF, OTF)",
+        show: isOutlines,
+        fields: [
+          num("outline.prune", "Порог веточек", { step: 0.005, min: 0, max: 0.4, hint: "Больше — сильнее срезаются отростки скелета." }),
+          num("outline.extend", "Достройка концов", { step: 0.05, min: 0, max: 2 }),
+          num("outline.smooth", "Сглаживание", { step: 0.005, min: 0, max: 0.2 }),
+          num("outline.simplify", "Упрощение", { step: 0.001, min: 0, max: 0.03 }),
+          num("outline.junction_merge", "Склейка близких развилок", { step: 0.1, min: 0, max: 6 }),
+          num("outline.px_per_em", "Разрешение растеризации", { unit: "px/em", step: 50, min: 400, max: 3000 }),
+        ],
+      },
+    ],
+  },
+];
+
 const TABS = [
   {
     id: "main",
@@ -196,6 +315,7 @@ const TABS = [
       },
     ],
   },
+  ...NOTEBOOK_TABS,
   {
     id: "extra",
     title: "Дополнительные",
@@ -268,7 +388,14 @@ function buildForm(container, groups, hooks) {
       const row = document.createElement("label");
       row.className = f.type === "bool" || f.type === "travel" ? "frow check" : "frow";
       let input;
-      if (f.type === "bool" || f.type === "travel") {
+      if (f.type === "seed" || f.type === "fontUpload" || f.type === "testFile") {
+        row.className = "frow action";
+        input = document.createElement("button");
+        input.type = "button";
+        input.className = "btn small";
+        input.textContent = f.label;
+        row.appendChild(input);
+      } else if (f.type === "bool" || f.type === "travel") {
         input = document.createElement("input");
         input.type = "checkbox";
         row.append(input, document.createTextNode(" " + f.label));
@@ -294,9 +421,9 @@ function buildForm(container, groups, hooks) {
           }
         }
         ctl.appendChild(input);
-        if (f.unit) {
+        if (f.type === "num") {
           const u = document.createElement("i");
-          u.textContent = f.unit;
+          u.textContent = f.unit || "";
           ctl.appendChild(u);
         }
         row.append(span, ctl);
@@ -311,7 +438,9 @@ function buildForm(container, groups, hooks) {
       const item = { f, row, input, group: box, g };
       items.push(item);
       const commit = () => hooks.change(item);
-      if (f.type === "num") {
+      if (input.tagName === "BUTTON") {
+        input.addEventListener("click", commit);
+      } else if (f.type === "num") {
         let t = 0;
         input.addEventListener("input", () => { clearTimeout(t); t = setTimeout(commit, 450); });
         input.addEventListener("change", () => { clearTimeout(t); commit(); });

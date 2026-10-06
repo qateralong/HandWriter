@@ -597,6 +597,7 @@ pub fn router(state: St) -> Router {
         .route("/api/settings", get(get_settings).put(put_settings))
         .route("/api/defaults", get(get_defaults))
         .route("/api/app", get(get_app).put(put_app))
+        .route("/api/save", post(save_file))
         .route("/api/preview", post(|b: Bytes| async move { with_settings("/api/preview", b, text_preview).await }))
         .route("/api/gcode", post(|b: Bytes| async move { with_settings("/api/gcode", b, text_gcode).await }))
         .route("/api/testfile", post(|b: Bytes| async move { with_settings("/api/testfile", b, testfile).await }))
@@ -812,4 +813,32 @@ async fn put_app(b: Bytes) -> Response {
     }
     handwriter_core::i18n::set_lang(&prefs.lang);
     ok(json!({"ok": true, "lang": prefs.lang}))
+}
+
+#[derive(Deserialize)]
+struct SaveRequest {
+    filename: String,
+    content: String,
+}
+
+async fn save_file(b: Bytes) -> Response {
+    let req: SaveRequest = match parse_body("/api/save", &b) {
+        Ok(r) => r,
+        Err(r) => return r,
+    };
+    blocking("/api/save".into(), move || {
+        let name = safe(base_name(&req.filename));
+        if name.is_empty() || name.starts_with('.') {
+            return detail(StatusCode::BAD_REQUEST, "Неверное имя файла");
+        }
+        let path = crate::paths::unique_path(&crate::paths::downloads_dir(), &name);
+        match std::fs::write(&path, req.content) {
+            Ok(()) => {
+                logs::info("handwriter.server", &format!("Файл сохранён: {}", path.display()));
+                ok(json!({"path": path.display().to_string(), "filename": name}))
+            }
+            Err(e) => detail(StatusCode::INTERNAL_SERVER_ERROR, &format!("Не удалось сохранить файл: {e}")),
+        }
+    })
+    .await
 }

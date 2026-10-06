@@ -43,10 +43,6 @@
   <canvas id="cv"></canvas>
   <div class="messages" id="messages"></div>
   <div class="busy" id="busy" hidden><span class="spinner"></span><span id="busyText">считаю…</span></div>
-  <div class="placeholder" id="notebookStub" hidden>
-    <h2>Тетрадный режим</h2>
-    <p>Новый вид тетрадного режима появится на следующих шагах.<br>Пока им можно пользоваться в <a href="/classic">классическом интерфейсе</a>.</p>
-  </div>
 </main>
 
 <footer class="bottom">
@@ -59,6 +55,16 @@
     <button class="btn" id="paramsBtn" title="Параметры чертежа" aria-expanded="false">
       <svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
       <span>Чертёж</span>
+      <span class="caret">▴</span>
+    </button>
+    <button class="btn primary" id="textBtn" aria-expanded="false" hidden>
+      <svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4"/></svg>
+      <span>Текст</span>
+      <span class="caret">▴</span>
+    </button>
+    <button class="btn" id="handBtn" aria-expanded="false" hidden>
+      <svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+      <span>Почерк</span>
       <span class="caret">▴</span>
     </button>
     <span class="file" id="fileName"></span>
@@ -76,13 +82,38 @@
   <div class="form" id="quickForm"></div>
 </div>
 
+<div class="popover quick" id="handPop" hidden>
+  <div class="pop-head"><span class="pop-title">Почерк</span><button class="icon" id="handClose" aria-label="Закрыть">×</button></div>
+  <div class="form" id="handForm"></div>
+  <input type="file" id="fontInput" accept=".ttf,.otf,.svg" hidden>
+</div>
+
+<div class="popover quick editor" id="textPop" hidden>
+  <div class="pop-head">
+    <span class="pop-title">Текст</span>
+    <span class="pop-tools">
+      <label class="btn small"><input type="file" id="txtInput" accept=".txt,text/plain" hidden>Загрузить .txt</label>
+      <button class="icon" id="textClose" aria-label="Закрыть">×</button>
+    </span>
+  </div>
+  <textarea id="textArea" spellcheck="false" placeholder="Напиши или вставь текст"></textarea>
+  <div class="text-info" id="textInfo"></div>
+  <div class="missing-box" id="missingBox"></div>
+  <div class="fgroup">
+    <h3>Какой кусок текста</h3>
+    <label class="frow"><span>Начало листа: слово</span><span class="ctl"><input type="number" id="startWord" min="1" step="1"></span></label>
+    <div class="frow"><span id="resumeText">Пишется весь лист</span><span class="ctl"><button class="btn small" id="resumeOff" hidden>Писать весь лист</button></span></div>
+    <p class="fhint">Щёлкни по букве на листе, чтобы продолжить печать с неё (если лист прервался).</p>
+    <div class="frow"><span id="endText"></span><span class="ctl"><button class="btn small" id="nextSheet" hidden>Следующий лист →</button></span></div>
+  </div>
+</div>
+
 <div class="overlay" id="settingsPanel" hidden>
   <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
     <nav class="tabs" id="settingsTabs"></nav>
     <div class="tab-body">
       <div class="panel-head"><h2 id="settingsTitle"></h2><button class="icon" id="settingsClose" aria-label="Закрыть">×</button></div>
       <div class="form" id="settingsForm"></div>
-      <p class="hint">Здесь пока только настройки чертежа и принтера; почерк — в <a href="/classic">классическом интерфейсе</a>.</p>
     </div>
   </div>
 </div>

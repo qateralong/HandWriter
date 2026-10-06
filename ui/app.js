@@ -6,7 +6,9 @@ const IN_APP = new URLSearchParams(location.search).has("app");
 const state = {
   settings: null,
   preview: null,
-  mode: "drawing",
+  text: null,
+  fonts: [],
+  mode: new URLSearchParams(location.search).get("mode") || localGet("hw-mode") || "drawing",
   view: new URLSearchParams(location.search).get("view") || localGet("hw-view") || "one",
   pass: 1,
   zoom: { f: 1, px: 0, py: 0 },
@@ -75,16 +77,23 @@ async function refreshPreview() {
   if (!state.settings) return;
   const seq = ++previewSeq;
   busy(true);
+  const drawing = state.mode === "drawing";
   try {
-    const p = await api("POST", "/api/drawing/preview", state.settings);
+    const p = await api("POST", drawing ? "/api/drawing/preview" : "/api/preview", state.settings);
     if (seq !== previewSeq) return;
-    state.preview = p;
-    const n = p.parts?.length || 0;
-    if (state.pass > n) state.pass = Math.max(1, n);
+    if (drawing) {
+      state.preview = p;
+      const n = p.parts?.length || 0;
+      if (state.pass > n) state.pass = Math.max(1, n);
+    } else {
+      state.text = p;
+      renderTextPanel();
+    }
     showMessages(p.errors, p.warnings);
   } catch (e) {
     if (seq !== previewSeq) return;
-    state.preview = null;
+    if (drawing) state.preview = null;
+    else state.text = null;
     showMessages(e.data?.errors || [e.message], []);
   } finally {
     busy(false);
@@ -101,24 +110,31 @@ function totalTime(p) {
 }
 
 function renderChrome() {
+  const drawing = state.mode === "drawing";
   const p = state.preview;
   const n = p?.parts?.length || 0;
   for (const b of $("modeSeg").children) b.classList.toggle("on", b.dataset.mode === state.mode);
   for (const b of $("viewSeg").children) b.classList.toggle("on", b.dataset.view === state.view);
-  const drawing = state.mode === "drawing";
   $("viewSeg").hidden = !drawing;
-  $("notebookStub").hidden = drawing;
-  $("cv").hidden = !drawing;
-  $("messages").hidden = !drawing;
   $("pager").hidden = !drawing || state.view !== "one" || n < 2;
   $("passLabel").textContent = n ? `проход ${state.pass} из ${n}` : "";
   $("prevPass").disabled = state.pass <= 1;
   $("nextPass").disabled = state.pass >= n;
-  $("timeVal").textContent = fmtTime(totalTime(p));
-  $("downloadBtn").disabled = !drawing || !p || (p.errors || []).length > 0 || n === 0;
-  const imp = p?.import;
-  $("fileName").textContent = imp ? imp.name : "";
-  $("fileName").title = imp ? `${imp.name}${imp.units_note ? " — " + imp.units_note : ""}` : "";
+  for (const id of ["uploadBtn", "paramsBtn"]) $(id).hidden = !drawing;
+  for (const id of ["textBtn", "handBtn"]) $(id).hidden = drawing;
+  if (drawing) {
+    $("timeVal").textContent = fmtTime(totalTime(p));
+    $("downloadBtn").disabled = !p || (p.errors || []).length > 0 || n === 0;
+    const imp = p?.import;
+    $("fileName").textContent = imp ? imp.name : "";
+    $("fileName").title = imp ? `${imp.name}${imp.units_note ? " — " + imp.units_note : ""}` : "";
+  } else {
+    const t = state.text;
+    $("timeVal").textContent = fmtTime(t?.stats?.time_s);
+    $("downloadBtn").disabled = !t || (t.errors || []).length > 0 || !t.strokes?.length;
+    $("fileName").textContent = t?.font ? t.font.name : "";
+    $("fileName").title = t?.word_count != null ? `Слов в тексте: ${t.word_count}` : "";
+  }
 }
 
 const cv = $("cv");
@@ -243,8 +259,12 @@ function draw() {
   }
   ctx.setTransform(d, 0, 0, d, 0, 0);
   ctx.clearRect(0, 0, r.width, r.height);
+  if (state.mode === "notebook") {
+    drawNotebook(r);
+    return;
+  }
   const p = state.preview;
-  if (!p?.sheet || state.mode !== "drawing") return;
+  if (!p?.sheet) return;
   const parts = p.parts || [];
   const n = parts.length;
   if (state.view === "one" || n < 2) {
@@ -277,7 +297,11 @@ cv.addEventListener("pointermove", (e) => {
   state.zoom.py = drag.py + e.clientY - drag.y;
   draw();
 });
-cv.addEventListener("pointerup", () => { drag = null; cv.classList.remove("drag"); });
+cv.addEventListener("pointerup", (e) => {
+  if (drag && state.mode === "notebook" && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 4) pickLetter(e);
+  drag = null;
+  cv.classList.remove("drag");
+});
 cv.addEventListener("dblclick", () => { state.zoom = { f: 1, px: 0, py: 0 }; draw(); });
 cv.addEventListener("wheel", (e) => {
   e.preventDefault();
@@ -296,10 +320,15 @@ addEventListener("themechange", draw);
 
 $("modeSeg").addEventListener("click", (e) => {
   const b = e.target.closest("button");
-  if (!b) return;
+  if (!b || b.dataset.mode === state.mode) return;
   state.mode = b.dataset.mode;
+  localPut("hw-mode", state.mode);
+  state.zoom = { f: 1, px: 0, py: 0 };
+  closePopovers();
+  showMessages([], []);
   renderChrome();
   draw();
+  refreshPreview();
 });
 $("viewSeg").addEventListener("click", (e) => {
   const b = e.target.closest("button");
@@ -325,6 +354,7 @@ addEventListener("keydown", (e) => {
 });
 
 let quickItems = [];
+let handItems = [];
 let settingsItems = [];
 let activeTab = localGet("hw-tab") || "main";
 let lastTravel = null;
@@ -336,6 +366,16 @@ function specialOptions(item) {
   if (f.type === "file") opts = (state.files || []).map((x) => [x.spec, x.label]);
   if (f.type === "theme") opts = [["auto", "как в системе"], ["light", "светлая"], ["dark", "тёмная"]];
   if (f.type === "lang") opts = appInfo.langs;
+  if (f.type === "font") {
+    opts = state.fonts.map((x) => [x.spec, `${x.label} · ${x.mode === "outlines" ? "контуры" : "штрихи"}`]);
+    const S = state.settings;
+    if (S && !state.fonts.some((x) => x.spec === S.font)) opts.push([S.font, `${S.font} (не найден)`]);
+  }
+  if (f.type === "profile") {
+    const S = state.settings;
+    opts = Object.keys(S?.profiles || {}).map((k) => [k, k]);
+    if (S && !S.profiles[S.active_profile]) opts.push(["", "(свои параметры)"]);
+  }
   if (!opts) return;
   const key = JSON.stringify(opts);
   if (input.dataset.opts === key) return;
@@ -356,6 +396,11 @@ function itemValue(item) {
     case "theme": return localGet("hw-theme") || "auto";
     case "lang": return appInfo.lang;
     case "travel": return !!S.printer.travel;
+    case "font": return S.font;
+    case "profile": return S.profiles[S.active_profile] ? S.active_profile : "";
+    case "seed":
+    case "fontUpload":
+    case "testFile": return null;
     default: return fieldValue(item.f, S);
   }
 }
@@ -364,7 +409,7 @@ function syncForms() {
   const S = state.settings, P = state.preview;
   if (!S) return;
   const groups = new Map();
-  for (const item of [...quickItems, ...settingsItems]) {
+  for (const item of [...quickItems, ...handItems, ...settingsItems]) {
     const { f, g, row, input } = item;
     specialOptions(item);
     const visible = (!g.show || g.show(S, P)) && (!f.show || f.show(S, P));
@@ -373,7 +418,7 @@ function syncForms() {
     input.disabled = !!f.disabled?.(S, P);
     if (!groups.has(item.group)) groups.set(item.group, false);
     if (visible) groups.set(item.group, true);
-    if (document.activeElement === input) continue;
+    if (document.activeElement === input || input.tagName === "BUTTON") continue;
     const v = itemValue(item);
     if (input.type === "checkbox") input.checked = !!v;
     else input.value = v == null ? "" : String(v);
@@ -405,7 +450,29 @@ async function onFieldChange(item) {
     }
     return;
   }
-  if (f.type === "file") {
+  if (f.type === "fontUpload") {
+    $("fontInput").click();
+    return;
+  }
+  if (f.type === "testFile") {
+    await downloadTextGcode("/api/testfile");
+    return;
+  }
+  if (f.type === "seed") {
+    S.randomness.seed = Math.floor(Math.random() * 1e6);
+  } else if (f.type === "font") {
+    S.font = input.value;
+    const font = state.fonts.find((x) => x.spec === S.font);
+    if (font) S.mode = font.mode;
+  } else if (f.type === "profile") {
+    const prof = S.profiles[input.value];
+    if (prof) {
+      S.active_profile = input.value;
+      S.sheet = JSON.parse(JSON.stringify(prof.sheet));
+      S.typography.size_mm = prof.size_mm;
+      S.typography.baseline_shift = prof.baseline_shift;
+    }
+  } else if (f.type === "file") {
     S.drawing.file = input.value;
     S.drawing.imp.pdf_page = 1;
     S.drawing.weights.layers = {};
@@ -439,6 +506,7 @@ async function flushSave() {
 
 function buildForms() {
   quickItems = buildForm($("quickForm"), QUICK, { change: onFieldChange });
+  handItems = buildForm($("handForm"), HAND, { change: onFieldChange });
   const nav = $("settingsTabs");
   nav.innerHTML = "";
   for (const t of TABS) {
@@ -464,7 +532,7 @@ function showTab(id) {
 function openSettings(open) {
   $("settingsPanel").hidden = !open;
   if (open) {
-    $("paramsPop").hidden = true;
+    closePopovers();
     syncForms();
   }
 }
@@ -472,22 +540,43 @@ $("settingsBtn").onclick = () => openSettings(true);
 $("settingsClose").onclick = () => openSettings(false);
 $("settingsPanel").addEventListener("mousedown", (e) => { if (e.target === $("settingsPanel")) openSettings(false); });
 
-function openParams(open) {
-  $("paramsPop").hidden = !open;
-  $("paramsBtn").setAttribute("aria-expanded", String(open));
-  if (open) syncForms();
+const POPS = [["paramsPop", "paramsBtn"], ["handPop", "handBtn"], ["textPop", "textBtn"]];
+
+function openPop(id, open) {
+  for (const [pid, bid] of POPS) {
+    const on = pid === id ? open : false;
+    $(pid).hidden = !on;
+    $(bid).setAttribute("aria-expanded", String(on));
+  }
+  if (open) {
+    syncForms();
+    if (id === "textPop") renderTextPanel();
+  }
 }
-$("paramsBtn").onclick = (e) => { e.stopPropagation(); openParams($("paramsPop").hidden); };
-$("paramsClose").onclick = () => openParams(false);
+function closePopovers() {
+  openPop("", false);
+}
+function openParams(open) {
+  openPop("paramsPop", open);
+}
+for (const [pid, bid] of POPS) {
+  $(bid).addEventListener("click", (e) => { e.stopPropagation(); openPop(pid, $(pid).hidden); });
+}
+$("paramsClose").onclick = closePopovers;
+$("handClose").onclick = closePopovers;
+$("textClose").onclick = closePopovers;
 document.addEventListener("mousedown", (e) => {
-  const pop = $("paramsPop");
-  if (!pop.hidden && !pop.contains(e.target) && !$("paramsBtn").contains(e.target)) openParams(false);
+  for (const [pid, bid] of POPS) {
+    const pop = $(pid);
+    if (!pop.hidden && !pop.contains(e.target) && !$(bid).contains(e.target)) openPop(pid, false);
+  }
 });
 addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   if (!$("settingsPanel").hidden) openSettings(false);
-  else if (!$("paramsPop").hidden) openParams(false);
+  else closePopovers();
 });
+
 async function loadFiles() {
   try {
     state.files = await api("GET", "/api/drawing/files");
@@ -530,6 +619,10 @@ function fileNameFrom(resp, fallback) {
 }
 
 $("downloadBtn").onclick = async () => {
+  if (state.mode === "notebook") {
+    await downloadTextGcode("/api/gcode");
+    return;
+  }
   await flushSave();
   const tests = state.settings.drawing.test_files !== false;
   busy(true, "готовлю архив…");
@@ -560,6 +653,367 @@ $("downloadBtn").onclick = async () => {
   }
 };
 
+
+let nbView = null;
+
+function textTransform(S) {
+  const t = S.typography, a = (t.rotation_deg * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+  return ([x, y]) => [c * x - s * y + t.dx, s * x + c * y + t.dy];
+}
+
+function drawNotebook(r) {
+  const S = state.settings, P = state.text;
+  if (!S) return;
+  const sh = S.sheet, W = sh.width, H = sh.height;
+  const pad = 26;
+  const k = Math.max(0.05, Math.min((r.width - 2 * pad) / W, (r.height - 2 * pad) / H)) * state.zoom.f;
+  const ox = r.width / 2 + state.zoom.px - (W * k) / 2, oy = r.height / 2 + state.zoom.py + (H * k) / 2;
+  nbView = { k, ox, oy };
+  const T = ([x, y]) => [ox + x * k, oy - y * k];
+  const line = (a, b) => { const p = T(a), q = T(b); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); };
+
+  ctx.save();
+  ctx.shadowColor = css("--paper-edge");
+  ctx.shadowBlur = 14;
+  ctx.shadowOffsetY = 3;
+  ctx.fillStyle = css("--paper");
+  ctx.fillRect(ox, oy - H * k, W * k, H * k);
+  ctx.restore();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(ox, oy - H * k, W * k, H * k);
+  ctx.clip();
+  const bases = P?.baselines?.map((b) => b - S.typography.baseline_shift) || [];
+  if (S.preview.show_ruling) {
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = css("--rule");
+    ctx.beginPath();
+    if (sh.ruling === "grid" && sh.grid_step > 0 && sh.grid_step * k > 3) {
+      const y0 = H - sh.first_line_top;
+      for (let y = ((y0 % sh.grid_step) + sh.grid_step) % sh.grid_step; y <= H; y += sh.grid_step) line([0, y], [W, y]);
+      for (let x = sh.margin_left % sh.grid_step; x <= W; x += sh.grid_step) line([x, 0], [x, H]);
+    } else if (sh.ruling === "lines") {
+      for (const b of bases) line([0, b], [W, b]);
+    }
+    ctx.stroke();
+  }
+  ctx.strokeStyle = css("--margin-rule");
+  ctx.beginPath();
+  line([sh.margin_left, 0], [sh.margin_left, H]);
+  line([W - sh.margin_right, 0], [W - sh.margin_right, H]);
+  ctx.stroke();
+  ctx.setLineDash([5, 4]);
+  ctx.strokeStyle = css("--muted");
+  const top = H - sh.first_line_top;
+  const a = T([sh.margin_left, top]), b = T([W - sh.margin_right, sh.bottom_limit]);
+  ctx.strokeRect(a[0], a[1], b[0] - a[0], b[1] - a[1]);
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  ctx.save();
+  ctx.fillStyle = css("--resume");
+  const z = T([0, 0]);
+  ctx.beginPath();
+  ctx.arc(z[0], z[1], 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  if (!P) return;
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.lineWidth = Math.max(1, 0.35 * k);
+  for (const done of [true, false]) {
+    ctx.strokeStyle = css(done ? "--ink-done" : "--ink");
+    ctx.beginPath();
+    for (const st of P.strokes || []) {
+      if (!!st.d !== done) continue;
+      polyline(st.p.length === 1 ? [st.p[0], [st.p[0][0] + 0.01, st.p[0][1]]] : st.p, T);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  if (S.preview.show_travel && P.travel?.length) {
+    ctx.save();
+    ctx.setLineDash([3, 4]);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = css("--travel");
+    ctx.beginPath();
+    for (const [p, q] of P.travel) line(p, q);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  const TT = textTransform(S), xh = S.typography.size_mm;
+  const box = (g) => {
+    let pts;
+    if (g.b) {
+      const pd = Math.max(0.4, xh * 0.08), [x0, y0, x1, y1] = g.b;
+      pts = [[x0 - pd, y0 - pd], [x1 + pd, y0 - pd], [x1 + pd, y1 + pd], [x0 - pd, y1 + pd]];
+    } else {
+      const w = Math.max(g.adv, xh * 0.3);
+      pts = [[g.x, g.y - xh * 0.5], [g.x + w, g.y - xh * 0.5], [g.x + w, g.y + xh * 1.5], [g.x, g.y + xh * 1.5]].map(TT);
+    }
+    ctx.beginPath();
+    pts.map(T).forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.closePath();
+  };
+  ctx.save();
+  for (const g of P.glyphs || []) {
+    if (!g.missing) continue;
+    box(g);
+    ctx.fillStyle = "rgba(179,38,30,.18)";
+    ctx.fill();
+    ctx.strokeStyle = "#b3261e";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+  const e = P.end;
+  if (e?.last_word) {
+    const g = P.glyphs.find((q) => q.w === e.last_word && q.l === e.last_letter && !q.h);
+    if (g) {
+      box(g);
+      ctx.fillStyle = "rgba(255,200,0,.35)";
+      ctx.fill();
+    }
+  }
+  const rw = S.text_options.resume_word, rl = S.text_options.resume_letter;
+  if (rw) {
+    for (const g of P.glyphs.filter((q) => q.w === rw && q.l === rl && !q.h)) {
+      box(g);
+      ctx.strokeStyle = css("--resume");
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = "rgba(47,95,179,.12)";
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function glyphAt(x, y) {
+  const P = state.text, S = state.settings;
+  if (!P?.glyphs) return null;
+  let best = null, bestScore = Infinity;
+  const xh = S.typography.size_mm;
+  for (const g of P.glyphs) {
+    if (g.h) continue;
+    let cx, cy, inside = false, area = 0;
+    if (g.b) {
+      const [x0, y0, x1, y1] = g.b, pd = xh * 0.1;
+      inside = x >= x0 - pd && x <= x1 + pd && y >= y0 - pd && y <= y1 + pd;
+      cx = (x0 + x1) / 2;
+      cy = (y0 + y1) / 2;
+      area = (x1 - x0) * (y1 - y0);
+    } else {
+      cx = g.x + g.adv / 2;
+      cy = g.y + xh / 2;
+    }
+    const d = Math.hypot(x - cx, y - cy);
+    const score = inside ? area * 1e-3 + d * 1e-3 : 1e6 + d;
+    if (score < bestScore && (inside || d < xh * 1.2)) {
+      best = g;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+function pickLetter(e) {
+  if (!nbView) return;
+  const r = cv.getBoundingClientRect();
+  const x = (e.clientX - r.left - nbView.ox) / nbView.k, y = (nbView.oy - (e.clientY - r.top)) / nbView.k;
+  const g = glyphAt(x, y);
+  if (!g) return;
+  const to = state.settings.text_options;
+  to.resume_word = g.w;
+  to.resume_letter = g.l;
+  toast(`Печать продолжится со слова ${g.w}, буквы ${g.l} («${g.c}»)`);
+  saveSettings();
+  schedulePreview();
+}
+
+function renderTextPanel() {
+  const S = state.settings, P = state.text;
+  if (!S) return;
+  const ta = $("textArea");
+  if (document.activeElement !== ta && ta.value !== S.text) ta.value = S.text;
+  if (document.activeElement !== $("startWord")) $("startWord").value = S.text_options.start_word;
+  $("textInfo").textContent = P?.word_count != null ? `Слов в тексте: ${P.word_count}` : "";
+  const r = P?.resume;
+  $("resumeText").textContent = r
+    ? `Продолжение со слова ${r.word}, буквы ${r.letter}${r.connected ? " (с точки связки)" : ""}; написанное — серым`
+    : "Пишется весь лист";
+  $("resumeOff").hidden = !S.text_options.resume_word;
+  const e = P?.end;
+  if (e?.last_word) {
+    $("endText").textContent = e.next_word
+      ? `На лист помещаются слова ${e.first_word}–${e.last_word}`
+      : `На лист помещаются слова ${e.first_word}–${e.last_word}; текст на этом листе заканчивается`;
+    $("nextSheet").hidden = !e.next_word;
+  } else {
+    $("endText").textContent = "";
+    $("nextSheet").hidden = true;
+  }
+  renderMissing();
+}
+
+function renderMissing() {
+  const box = $("missingBox"), S = state.settings, list = state.text?.missing || [];
+  box.innerHTML = "";
+  if (!list.length) return;
+  const head = document.createElement("div");
+  head.innerHTML = "<b>Этих символов нет в шрифте.</b> Реши для каждого, иначе gcode не создаётся.";
+  box.appendChild(head);
+  for (const m of list) {
+    const choice = S.text_options.missing[m.char];
+    const row = document.createElement("div");
+    row.className = "m-row" + (m.resolved ? " ok" : "");
+    const ch = document.createElement("span");
+    ch.className = "ch";
+    ch.textContent = m.char === " " ? "␣" : m.char;
+    const info = document.createElement("span");
+    info.textContent = `${m.count} раз · ${m.code}`;
+    info.title = m.name;
+    const sel = document.createElement("select");
+    for (const [v, t] of [["", "не решено"], ["skip", "пропустить"], ["replace", "заменить на"]]) {
+      const o = document.createElement("option");
+      o.value = v;
+      o.textContent = t;
+      sel.appendChild(o);
+    }
+    sel.value = choice ? choice.action : "";
+    const inp = document.createElement("input");
+    inp.type = "text";
+    inp.value = choice?.replacement || "";
+    inp.hidden = sel.value !== "replace";
+    const apply = () => {
+      if (!sel.value) delete S.text_options.missing[m.char];
+      else S.text_options.missing[m.char] = { action: sel.value, replacement: inp.value };
+      inp.hidden = sel.value !== "replace";
+      saveSettings();
+      schedulePreview();
+    };
+    sel.onchange = apply;
+    inp.onchange = apply;
+    row.append(ch, info, sel, inp);
+    box.appendChild(row);
+  }
+}
+
+let textTimer = 0;
+$("textArea").addEventListener("input", () => {
+  state.settings.text = $("textArea").value;
+  clearTimeout(textTimer);
+  textTimer = setTimeout(() => { saveSettings(); refreshPreview(); }, 500);
+});
+$("startWord").addEventListener("change", () => {
+  const v = Math.round(Number($("startWord").value));
+  if (!(v >= 1)) return;
+  state.settings.text_options.start_word = v;
+  saveSettings();
+  schedulePreview();
+});
+$("resumeOff").onclick = () => {
+  const to = state.settings.text_options;
+  to.resume_word = 0;
+  to.resume_letter = 1;
+  saveSettings();
+  schedulePreview();
+};
+$("nextSheet").onclick = () => {
+  const e = state.text?.end;
+  if (!e?.next_word) return;
+  const to = state.settings.text_options;
+  to.start_word = e.next_word;
+  to.resume_word = 0;
+  to.resume_letter = 1;
+  saveSettings();
+  schedulePreview();
+};
+$("txtInput").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  try {
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(await f.arrayBuffer());
+    state.settings.text = text.replace(/^﻿/, "");
+    $("textArea").value = state.settings.text;
+    saveSettings();
+    refreshPreview();
+  } catch {
+    toast("Файл не в UTF-8. Сохрани его в кодировке UTF-8 и загрузи снова.");
+  }
+});
+
+async function loadFonts() {
+  try {
+    state.fonts = await api("GET", "/api/fonts");
+  } catch {
+    state.fonts = [];
+  }
+}
+
+$("fontInput").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  const payload = { name: f.name.replace(/\.(svg|ttf|otf)$/i, ""), files: [] };
+  if (/\.(ttf|otf)$/i.test(f.name)) {
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    payload.files.push({ filename: f.name, content_b64: btoa(bin) });
+  } else {
+    payload.files.push({ filename: f.name, content: await f.text() });
+  }
+  busy(true, "загружаю шрифт…");
+  try {
+    const r = await api("POST", "/api/fonts/upload", payload);
+    state.settings.font = r.spec;
+    state.settings.mode = r.mode;
+    await loadFonts();
+    saveSettings();
+    syncForms();
+    refreshPreview();
+    if (r.notes?.length) toast(r.notes.join(" "), 9000);
+  } catch (err) {
+    toast("Шрифт не загружен: " + err.message, 8000);
+  } finally {
+    busy(false);
+  }
+});
+
+async function saveText(filename, content) {
+  if (IN_APP) {
+    const r = await api("POST", "/api/save", { filename, content });
+    toast(`Сохранено: ${r.path}`, 8000);
+    return;
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([content], { type: "text/plain" }));
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+async function downloadTextGcode(url) {
+  await flushSave();
+  busy(true, "готовлю gcode…");
+  try {
+    const r = await api("POST", url, state.settings);
+    await saveText(r.filename, r.gcode);
+  } catch (e) {
+    showMessages(e.data?.errors || [e.message], state.text?.warnings || []);
+  } finally {
+    busy(false);
+  }
+}
+
 (async function init() {
   renderChrome();
   try {
@@ -571,7 +1025,7 @@ $("downloadBtn").onclick = async () => {
   try {
     appInfo = await api("GET", "/api/app");
   } catch { }
-  await loadFiles();
+  await Promise.all([loadFiles(), loadFonts()]);
   const q = new URLSearchParams(location.search);
   if (q.get("tab")) activeTab = q.get("tab");
   buildForms();

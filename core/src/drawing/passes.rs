@@ -282,7 +282,17 @@ impl Plan {
 
 pub type RotationRects = (Vec<i64>, IndexMap<i64, Rect>, Vec<String>);
 
+pub type PassOffset<'a> = &'a dyn Fn(i64) -> (f64, f64);
+
+fn no_offset(_: i64) -> (f64, f64) {
+    (0.0, 0.0)
+}
+
 pub fn rotation_rects(w: f64, h: f64, printer: &Printer) -> RotationRects {
+    rotation_rects_off(w, h, printer, &no_offset)
+}
+
+pub fn rotation_rects_off(w: f64, h: f64, printer: &Printer, off: PassOffset) -> RotationRects {
     let (mut allowed, mut rects, mut notes) = (Vec::new(), IndexMap::new(), Vec::new());
     for r in ROTATIONS {
         let tb = make_table(printer, w, h);
@@ -291,7 +301,9 @@ pub fn rotation_rects(w: f64, h: f64, printer: &Printer) -> RotationRects {
             notes.push(format!("{r}°: {why}"));
             continue;
         }
-        let Some(rc) = pass_rect(r, w, h, tb.safe) else {
+        let (dx, dy) = off(r);
+        let safe = (tb.safe.0 - dx, tb.safe.1 - dy, tb.safe.2 - dx, tb.safe.3 - dy);
+        let Some(rc) = pass_rect(r, w, h, safe) else {
             notes.push(format!("{r}°: окно достижимости не заходит на лист"));
             continue;
         };
@@ -523,11 +535,16 @@ pub fn a3_affine(z: &A3Sheet, w: f64, h: f64, r: i64) -> Affine {
 }
 
 pub fn a3_rects(z: &A3Sheet, w: f64, h: f64) -> RotationRects {
+    a3_rects_off(z, w, h, &no_offset)
+}
+
+pub fn a3_rects_off(z: &A3Sheet, w: f64, h: f64, off: PassOffset) -> RotationRects {
     let (mut allowed, mut rects, mut notes) = (Vec::new(), IndexMap::new(), Vec::new());
     for (i, r) in A3_RUNS.into_iter().enumerate() {
         let m = a3_affine(z, w, h, r);
-        let q0 = invert_affine(m, (z.x_min, z.y_min));
-        let q1 = invert_affine(m, (z.x_max, z.y_max));
+        let (dx, dy) = off(r);
+        let q0 = invert_affine(m, (z.x_min - dx, z.y_min - dy));
+        let q1 = invert_affine(m, (z.x_max - dx, z.y_max - dy));
         let bx =
             (numeric::min(q0.0, q1.0), numeric::min(q0.1, q1.1), numeric::max(q0.0, q1.0), numeric::max(q0.1, q1.1));
         let Some(rc) = intersect(bx, (0.0, 0.0, w, h)) else {
@@ -551,10 +568,15 @@ pub fn invert_affine(m: Affine, q: Point) -> Point {
 }
 
 pub fn marked_rects(mk: &MarkedSheet, w: f64, h: f64) -> RotationRects {
+    marked_rects_off(mk, w, h, &no_offset)
+}
+
+pub fn marked_rects_off(mk: &MarkedSheet, w: f64, h: f64, off: PassOffset) -> RotationRects {
     let (mut allowed, mut rects, mut notes) = (Vec::new(), IndexMap::new(), Vec::new());
     for r in [0, 180] {
         let m = marked_affine(mk, w, h, r);
-        let (a, b, c) = (m[2], m[3], m[5] - mk.y_min);
+        let (_, dy) = off(r);
+        let (a, b, c) = (m[2], m[3], m[5] - (mk.y_min - dy));
         let rc = if b.abs() >= a.abs() {
             let bounds = [0.0, w].map(|u| (-c - a * u) / b);
             if b > 0.0 {

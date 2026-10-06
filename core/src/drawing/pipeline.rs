@@ -10,9 +10,9 @@ use crate::checks::{check_bounds, check_printer, to_machine};
 use crate::drawing::model::{DPath, ImportResult, Mask};
 use crate::drawing::ops::{dash_polyline, dedupe, expand_passes, join_paths, order_paths, outside_parts};
 use crate::drawing::passes::{
-    self, A3_RUNS, Affine, Plan, a3_affine, a3_rects, apply_affine, corner, corner_name, corner_point, covered_mask,
-    invert_affine, make_table, marked_affine, marked_rects, pass_dims, plan_sheet, rotation_rects, segments, to_pass,
-    uncovered,
+    self, A3_RUNS, Affine, Plan, a3_affine, a3_rects_off, apply_affine, corner, corner_name, corner_point,
+    covered_mask, invert_affine, make_table, marked_affine, marked_rects_off, pass_dims, plan_sheet, rotation_rects,
+    rotation_rects_off, segments, to_pass, uncovered,
 };
 use crate::drawing::place::{
     AnchorKind, Placement, Rect, SheetLayout, anchor_of, best_fit, fixed_mode, place, reach_areas, scale_label,
@@ -552,12 +552,13 @@ struct Setup {
 fn setup(s: &Settings, imp: &ImportResult, bbox: Rect, pad: f64) -> Setup {
     let ds = &s.drawing;
     let lay = sheet_layout(ds, Some(bbox));
+    let off = |r: i64| ds.split.offsets.get(&r.to_string()).copied().unwrap_or((0.0, 0.0));
     let (allowed, rects, notes) = if ds.a3.enabled {
-        a3_rects(&ds.a3, lay.width, lay.height)
+        a3_rects_off(&ds.a3, lay.width, lay.height, &off)
     } else if ds.marked.enabled {
-        marked_rects(&ds.marked, lay.width, lay.height)
+        marked_rects_off(&ds.marked, lay.width, lay.height, &off)
     } else {
-        rotation_rects(lay.width, lay.height, &s.printer)
+        rotation_rects_off(lay.width, lay.height, &s.printer, &off)
     };
     let mut windows: Vec<Rect> = allowed.iter().map(|r| rects[r]).collect();
     if anchor_of(ds) == AnchorKind::Zero
@@ -1261,7 +1262,7 @@ pub fn part_test_strokes(c: &DrawingComposition, part: &PassPart) -> Vec<Vec<Poi
     let mut fixed: Vec<Vec<Point>> = Vec::new();
     let reach = c.pass_rects.get(&r).copied();
     if let Some(rc) = reach {
-        fixed.push(rect_points(c, rc, r));
+        fixed.push(rect_points(c, rc, r).into_iter().map(|p| (p.0 + part.dx, p.1 + part.dy)).collect());
     }
     if c.parts.len() > 1 {
         let reg = part.region;

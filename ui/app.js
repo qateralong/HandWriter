@@ -136,10 +136,35 @@ function showMessages(errors, warnings) {
 }
 
 let saveTimer = 0;
+let saveDirty = false;
 function saveSettings() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => api("PUT", "/api/settings", state.settings).catch((e) => showMessages(e.data?.errors || [e.message], [])), 400);
+  saveDirty = true;
+  saveTimer = setTimeout(() => {
+    api("PUT", "/api/settings", state.settings)
+      .then(() => { saveDirty = false; })
+      .catch((e) => showMessages(e.data?.errors || [e.message], []));
+  }, 400);
 }
+
+let reloadBusy = false;
+async function reloadSettingsFromDisk() {
+  if (!state.settings || saveDirty || reloadBusy) return;
+  reloadBusy = true;
+  try {
+    const fresh = await api("GET", "/api/settings");
+    if (saveDirty || JSON.stringify(fresh) === JSON.stringify(state.settings)) return;
+    state.settings = fresh;
+    if (document.activeElement !== $("textArea")) $("textArea").value = fresh.text || "";
+    syncForms();
+    refreshPreview();
+  } catch {
+  } finally {
+    reloadBusy = false;
+  }
+}
+addEventListener("focus", reloadSettingsFromDisk);
+document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && reloadSettingsFromDisk());
 
 let previewSeq = 0;
 async function refreshPreview() {
@@ -624,7 +649,7 @@ async function onFieldChange(item) {
 
 async function flushSave() {
   clearTimeout(saveTimer);
-  if (state.settings) await api("PUT", "/api/settings", state.settings).catch(() => { });
+  if (state.settings) await api("PUT", "/api/settings", state.settings).then(() => { saveDirty = false; }).catch(() => { });
 }
 
 function buildForms() {

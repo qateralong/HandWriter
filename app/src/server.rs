@@ -35,6 +35,7 @@ use serde_json::{Value, json};
 use crate::assets::{static_file, ui_file};
 use crate::logs;
 use crate::paths::{font_paths, log_path, settings_path, user_drawings_dir, user_fonts_dir};
+use crate::printer::{self, PRINTER};
 
 pub struct Activity {
     pub started: Instant,
@@ -708,6 +709,24 @@ pub fn router(state: St) -> Router {
                 .await
             }),
         )
+        .route(
+            "/api/printer/ports",
+            get(|| async { blocking("/api/printer/ports".into(), || ok(json!(printer::list_ports()))).await }),
+        )
+        .route("/api/printer/status", get(printer_status))
+        .route("/api/printer/connect", post(printer_connect))
+        .route("/api/printer/disconnect", post(|| async { printer_result(PRINTER.disconnect()) }))
+        .route("/api/printer/command", post(printer_command))
+        .route("/api/printer/pause", post(|| async { printer_result(PRINTER.pause()) }))
+        .route("/api/printer/resume", post(|| async { printer_result(PRINTER.resume()) }))
+        .route("/api/printer/stop", post(|| async { printer_result(PRINTER.stop()) }))
+        .route("/api/printer/emergency", post(|| async { printer_result(PRINTER.emergency()) }))
+        .route(
+            "/api/printer/print",
+            post(|Query(q): Query<HashMap<String, String>>, b: Bytes| async move {
+                with_settings("/api/printer/print", b, move |s| printer_print(s, q)).await
+            }),
+        )
         .fallback(|uri: Uri| async move { detail(StatusCode::NOT_FOUND, &format!("Не найдено: {}", uri.path())) })
         .with_state(state)
 }
@@ -841,4 +860,112 @@ async fn save_file(b: Bytes) -> Response {
         }
     })
     .await
+}
+
+fn printer_result(r: Result<(), String>) -> Response {
+    match r {
+        Ok(()) => ok(json!({"ok": true})),
+        Err(e) => detail(StatusCode::CONFLICT, &e),
+    }
+}
+
+async fn printer_status(Query(q): Query<HashMap<String, String>>) -> Response {
+    let num = |k: &str| q.get(k).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+    ok(PRINTER.status(num("gen"), num("from") as usize, num("log")))
+}
+
+#[derive(Deserialize)]
+struct ConnectRequest {
+    port: String,
+    #[serde(default = "default_baud")]
+    baud: u32,
+}
+
+fn default_baud() -> u32 {
+    115200
+}
+
+async fn printer_connect(b: Bytes) -> Response {
+    let req: ConnectRequest = match parse_body("/api/printer/connect", &b) {
+        Ok(r) => r,
+        Err(r) => return r,
+    };
+    blocking("/api/printer/connect".into(), move || printer_result(PRINTER.connect(&req.port, req.baud))).await
+}
+
+#[derive(Deserialize)]
+struct CommandRequest {
+    cmd: String,
+}
+
+async fn printer_command(b: Bytes) -> Response {
+    let req: CommandRequest = match parse_body("/api/printer/command", &b) {
+        Ok(r) => r,
+        Err(r) => return r,
+    };
+    let lines: Vec<String> = req.cmd.lines().filter_map(printer::protocol::clean_line).collect();
+    if lines.is_empty() {
+        return detail(StatusCode::BAD_REQUEST, "Пустая команда");
+    }
+    if lines.iter().any(|l| l.split_whitespace().next().is_some_and(|w| w.eq_ignore_ascii_case("M112"))) {
+        return printer_result(PRINTER.emergency());
+    }
+    printer_result(PRINTER.command(lines))
+}
+
+fn printer_print(s: Settings, q: HashMap<String, String>) -> Response {
+    let test = match qbool(&q, "test", false) {
+        Ok(t) => t,
+        Err(r) => return r,
+    };
+    let pen = printer::Pen {
+        up: s.printer.pen_up_z,
+        down: s.printer.pen_down_z,
+        end: s.printer.pen_up_z + s.printer.end_lift,
+        feed_z: s.printer.feed_z,
+        feed_travel: s.printer.feed_travel,
+    };
+    let kind = q.get("kind").map_or("text", String::as_str);
+    let (code, map, label, part) = if kind == "drawing" {
+        let part: usize = match q.get("part").map(|v| v.trim().parse::<usize>()) {
+            None => 1,
+            Some(Ok(v)) => v,
+            Some(Err(_)) => return invalid("query", vec!["part: нужно число".into()]),
+        };
+        let c = dp::compose_drawing(&s, &loader);
+        if part < 1 || part > c.parts.len() {
+            return detail(StatusCode::BAD_REQUEST, &format!("Нет прохода {part}"));
+        }
+        if !c.errors.is_empty() {
+            return refused(c.errors.clone());
+        }
+        let p = &c.parts[part - 1];
+        let code = if test { dp::make_part_test_gcode(&c, p) } else { dp::make_part_gcode(&c, p) };
+        let label = if c.parts.len() > 1 {
+            format!("{}проход {part} из {}", if test { "тест, " } else { "" }, c.parts.len())
+        } else if test {
+            "тест рамки".into()
+        } else {
+            "чертёж".into()
+        };
+        (code, c.machine_map(p), label, part)
+    } else {
+        let code = if test {
+            make_test_gcode(&s).map(|(g, _)| g)
+        } else {
+            let c = match provider(&s.font, s.mode, &s.outline) {
+                Ok(p) => compose(&s, p.as_ref()),
+                Err(e) => compose_without_font(&s, &e),
+            };
+            make_gcode(&c)
+        };
+        (code, dp::MachineMap::for_text(&s), if test { "тест рамки".into() } else { "лист".into() }, 0)
+    };
+    let code = match code {
+        Ok(c) => c,
+        Err(e) => return refused(e),
+    };
+    let lines = printer::protocol::gcode_lines(&code);
+    let job = printer::Job { label, kind: kind.to_string(), part, test, lines, map, pen };
+    printer_result(PRINTER.start(job))
 }

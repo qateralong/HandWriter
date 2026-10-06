@@ -48,6 +48,37 @@ fn degrees(rs: &[i64]) -> String {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum SheetMap {
+    Identity,
+    Pass { rotation: i64, width: f64, height: f64 },
+    Affine(crate::drawing::passes::Affine),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MachineMap {
+    pub flip_x: bool,
+    pub flip_y: bool,
+    pub dx: f64,
+    pub dy: f64,
+    pub map: SheetMap,
+}
+
+impl MachineMap {
+    pub fn for_text(s: &Settings) -> MachineMap {
+        MachineMap { flip_x: s.printer.flip_x, flip_y: s.printer.flip_y, dx: 0.0, dy: 0.0, map: SheetMap::Identity }
+    }
+
+    pub fn to_sheet(&self, (x, y): Point) -> Point {
+        let q = (if self.flip_x { -x } else { x } - self.dx, if self.flip_y { -y } else { y } - self.dy);
+        match self.map {
+            SheetMap::Identity => q,
+            SheetMap::Pass { rotation, width, height } => crate::drawing::passes::from_pass(q, rotation, width, height),
+            SheetMap::Affine(m) => crate::drawing::passes::invert_affine(m, q),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct PassPart {
     pub index: usize,
     pub rotation: i64,
@@ -178,6 +209,17 @@ impl DrawingComposition {
         }
         let lay = self.layout();
         corner_point(r, lay.width, lay.height)
+    }
+
+    pub fn machine_map(&self, part: &PassPart) -> MachineMap {
+        let s = self.part_settings(part.rotation);
+        let lay = self.layout();
+        let map = if self.marked() {
+            SheetMap::Affine(self.affine(part.rotation))
+        } else {
+            SheetMap::Pass { rotation: part.rotation, width: lay.width, height: lay.height }
+        };
+        MachineMap { flip_x: s.printer.flip_x, flip_y: s.printer.flip_y, dx: part.dx, dy: part.dy, map }
     }
 
     pub fn part_strokes(&self, part: &PassPart, strokes: Option<&[Vec<Point>]>) -> Vec<Vec<Point>> {

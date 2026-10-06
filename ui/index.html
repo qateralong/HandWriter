@@ -29,7 +29,7 @@
     </div>
   </div>
   <div class="actions">
-    <button id="printerBtn" class="icon round" title="Принтер по кабелю — появится позже" aria-label="Принтер" disabled>
+    <button id="printerBtn" class="icon round" title="Принтер по кабелю" aria-label="Принтер" aria-expanded="false">
       <svg viewBox="0 0 24 24"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v7H6z"/></svg>
       <i class="dot"></i>
     </button>
@@ -44,6 +44,83 @@
   <div class="messages" id="messages"></div>
   <div class="busy" id="busy" hidden><span class="spinner"></span><span id="busyText">считаю…</span></div>
 </main>
+
+<aside class="printer-panel" id="printerPanel" hidden aria-label="Принтер по кабелю">
+  <div class="pp-head">
+    <span class="pop-title">Принтер по кабелю</span>
+    <span class="pill" id="ppStatus">не подключён</span>
+    <button class="icon" id="ppClose" aria-label="Закрыть">×</button>
+  </div>
+  <div class="pp-msg" id="ppMsg"></div>
+  <button class="btn danger" id="ppEmergency" hidden title="Мгновенная остановка (M112). После неё принтер нужно перезапустить.">Аварийная остановка</button>
+
+  <section class="pp-sec" id="ppConn">
+    <div class="pp-row">
+      <select id="ppPort" aria-label="Порт"></select>
+      <button class="icon" id="ppRefresh" title="Обновить список портов" aria-label="Обновить список портов">↻</button>
+    </div>
+    <input type="text" id="ppPath" placeholder="/dev/ttyUSB0 или COM3" hidden>
+    <div class="pp-row">
+      <select id="ppBaud" aria-label="Скорость">
+        <option value="115200">115200 бод</option>
+        <option value="250000">250000 бод</option>
+        <option value="57600">57600 бод</option>
+      </select>
+      <button class="btn small primary" id="ppConnect">Подключить</button>
+    </div>
+  </section>
+
+  <section class="pp-sec" id="ppPrint" hidden>
+    <h3>Печать</h3>
+    <div id="ppJobs"></div>
+    <div class="pp-progress" id="ppProgress" hidden>
+      <div class="pp-bar"><i id="ppBar"></i></div>
+      <div class="pp-ptext" id="ppPText"></div>
+      <div class="pp-row">
+        <button class="btn small" id="ppPause">Пауза</button>
+        <button class="btn small" id="ppResume" hidden>Продолжить</button>
+        <button class="btn small" id="ppStop">Стоп</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="pp-sec" id="ppMove" hidden>
+    <h3>Ручное управление</h3>
+    <div class="pp-pos" id="ppPos"></div>
+    <div class="seg pp-steps" id="ppSteps">
+      <button data-step="0.1">0.1</button><button data-step="1">1</button><button data-step="10" class="on">10</button><button data-step="50">50</button>
+      <span class="unit">мм</span>
+    </div>
+    <div class="pp-jog">
+      <div class="pp-xy">
+        <span></span><button class="icon" data-jog="Y+" title="Y+">▲</button><span></span>
+        <button class="icon" data-jog="X-" title="X−">◀</button>
+        <button class="icon" id="ppHome" title="В начало по X и Y (G28 X Y)" aria-label="В начало по X и Y">⌂</button>
+        <button class="icon" data-jog="X+" title="X+">▶</button>
+        <span></span><button class="icon" data-jog="Y-" title="Y−">▼</button><span></span>
+      </div>
+      <div class="pp-z">
+        <button class="icon" data-jog="Z+" title="Z+">▲</button>
+        <span>Z</span>
+        <button class="icon" data-jog="Z-" title="Z−">▼</button>
+      </div>
+      <div class="pp-pen">
+        <button class="btn small" id="ppPenUp">Поднять карандаш</button>
+        <button class="btn small" id="ppPenDown">Опустить карандаш</button>
+        <button class="btn small" id="ppZero" title="Карандаш касается бумаги в углу листа — запомнить эту точку как ноль">Ноль здесь</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="pp-sec pp-console" id="ppConsole" hidden>
+    <h3>Консоль</h3>
+    <div class="pp-log" id="ppLog"></div>
+    <form class="pp-row" id="ppCmdForm">
+      <input type="text" id="ppCmd" placeholder="Команда, например M114" spellcheck="false" autocomplete="off">
+      <button class="btn small" type="submit">Отправить</button>
+    </form>
+  </section>
+</aside>
 
 <footer class="bottom">
   <div class="left">
@@ -122,5 +199,6 @@
 <script src="/static/keepalive.js"></script>
 <script src="/ui/fields.js"></script>
 <script src="/ui/app.js"></script>
+<script src="/ui/printer.js"></script>
 </body>
 </html>

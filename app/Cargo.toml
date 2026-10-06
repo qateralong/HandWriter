@@ -17,6 +17,8 @@ regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
 serde_path_to_error = "0.1"
+serialport = { version = "4", default-features = false }
+keepawake = "0.6"
 tauri = { version = "2", features = [] }
 tauri-plugin-single-instance = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "time", "sync"] }

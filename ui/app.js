@@ -137,6 +137,7 @@ function renderChrome() {
     $("fileName").textContent = t?.font ? t.font.name : "";
     $("fileName").title = t?.word_count != null ? `Слов в тексте: ${t.word_count}` : "";
   }
+  if (typeof renderPrinter === "function") renderPrinter();
 }
 
 const cv = $("cv");
@@ -229,6 +230,8 @@ function drawSheet(box, part, caption) {
     ctx.stroke();
     ctx.restore();
   }
+
+  printerOverlay(T, k, "drawing", part ? part.index : 1);
 
   if (caption) {
     ctx.fillStyle = css("--text");
@@ -757,6 +760,8 @@ function drawNotebook(r) {
     ctx.stroke();
     ctx.restore();
   }
+
+  printerOverlay(T, k, "text", 0);
 
   const TT = textTransform(S), xh = S.typography.size_mm;
   const box = (g) => {

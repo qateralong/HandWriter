@@ -32,8 +32,14 @@ macro_rules! ui_asset {
     };
 }
 
-pub const UI: [Asset; 5] =
-    [ui_asset!("index.html"), ui_asset!("app.css"), ui_asset!("app.js"), ui_asset!("fields.js"), ui_asset!("theme.js")];
+pub const UI: [Asset; 6] = [
+    ui_asset!("index.html"),
+    ui_asset!("app.css"),
+    ui_asset!("app.js"),
+    ui_asset!("fields.js"),
+    ui_asset!("printer.js"),
+    ui_asset!("theme.js"),
+];
 
 pub const FONTS: [Asset; 3] = [
     asset!("fonts", "BadScript-OFL.txt"),

@@ -3,6 +3,7 @@
 mod assets;
 mod logs;
 mod paths;
+mod printer;
 mod selftest;
 mod server;
 

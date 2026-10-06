@@ -1,5 +1,5 @@
 use crate::checks::check_printer;
-use crate::gcode::{ascii, fmt};
+use crate::gcode::{END_PAD, ascii, fmt};
 use crate::geometry::Point;
 use crate::numeric::format_g;
 use crate::settings::Settings;
@@ -89,6 +89,7 @@ pub fn make_reach_check_gcode(s: &Settings) -> Result<String, Vec<String>> {
         }
     }
     lines.extend([format!("G0 Z{} F{fz}", fmt(pr.pen_up_z + pr.end_lift)), "M400".into()]);
+    lines.extend(END_PAD.iter().map(|s| s.to_string()));
     Ok(lines.join("\n") + "\n")
 }
 
@@ -107,5 +108,6 @@ pub fn make_zero_gcode(s: &Settings) -> Result<String, Vec<String>> {
     ];
     lines.extend(PREAMBLE.iter().map(|s| s.to_string()));
     lines.extend([format!("G0 Z{up} F{fz}"), "M117 Zero set, pen up".into(), "M400".into()]);
+    lines.extend(END_PAD.iter().map(|s| s.to_string()));
     Ok(lines.join("\n") + "\n")
 }

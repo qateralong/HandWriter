@@ -16,6 +16,7 @@ use axum::routing::{get, post};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use handwriter_core::calibration;
+use handwriter_core::drawing::align;
 use handwriter_core::drawing::model::ImportResult;
 use handwriter_core::drawing::passes::{corner, corner_name};
 use handwriter_core::drawing::pipeline as dp;
@@ -204,6 +205,8 @@ fn asset_response(name: &str, data: &'static [u8]) -> Response {
         "html" => "text/html; charset=utf-8",
         "png" => "image/png",
         "css" => "text/css; charset=utf-8",
+        "ttf" => "font/ttf",
+        "txt" => "text/plain; charset=utf-8",
         _ => "application/octet-stream",
     };
     if matches!(ext, "js" | "html") {
@@ -467,9 +470,32 @@ fn drawing_gcode(s: Settings, q: HashMap<String, String>) -> Response {
     }
 }
 
-fn build_zip(s: &Settings, tests: bool) -> Result<(String, Vec<u8>), Response> {
+fn align_files(c: &dp::DrawingComposition) -> Result<Vec<dp::GcodeFile>, Vec<String>> {
+    let marks = align::align_marks(c);
+    if marks.is_empty() {
+        return Err(vec![if c.parts.len() < 2 {
+            "Чертёж печатается за один проход — совмещать нечего".into()
+        } else {
+            "Не нашлось места, куда достают оба соседних прохода: метки совмещения не помещаются".into()
+        }]);
+    }
+    c.parts
+        .iter()
+        .map(|p| {
+            align::make_align_gcode(c, &marks, p).map(|g| dp::GcodeFile {
+                filename: align::align_filename(c, p),
+                gcode: g,
+                pass_index: p.index,
+                rotation: p.rotation,
+                test: true,
+            })
+        })
+        .collect()
+}
+
+fn build_zip(s: &Settings, tests: bool, align_test: bool) -> Result<(String, Vec<u8>), Response> {
     let c = dp::compose_drawing(s, &loader);
-    let files = match dp::make_all_files(&c, tests) {
+    let files = match if align_test { align_files(&c) } else { dp::make_all_files(&c, tests) } {
         Ok(f) => f,
         Err(e) => return Err(refused(e)),
     };
@@ -484,7 +510,16 @@ fn build_zip(s: &Settings, tests: bool) -> Result<(String, Vec<u8>), Response> {
         ));
     }
     lines.push(String::new());
-    lines.push("Запускай файлы по порядку номеров. Файлы *_test.gcode — тестовые проходы без линий чертежа.".into());
+    if align_test {
+        lines.push(
+            "Тест совмещения: чистый лист, клади его точно так же, как для чертежа, и запускай файлы по порядку."
+                .into(),
+        );
+        lines.push("Потом введи в программе, на сколько делений указатели ушли от нуля шкал.".into());
+    } else {
+        lines
+            .push("Запускай файлы по порядку номеров. Файлы *_test.gcode — тестовые проходы без линий чертежа.".into());
+    }
     let mut buf = std::io::Cursor::new(Vec::new());
     {
         let mut z = zip::ZipWriter::new(&mut buf);
@@ -502,11 +537,12 @@ fn build_zip(s: &Settings, tests: bool) -> Result<(String, Vec<u8>), Response> {
             return Err(detail(StatusCode::INTERNAL_SERVER_ERROR, "zip"));
         }
     }
-    Ok((dp::file_stem(&c) + ".zip", buf.into_inner()))
+    let name = if align_test { dp::file_stem(&c) + "_align.zip" } else { dp::file_stem(&c) + ".zip" };
+    Ok((name, buf.into_inner()))
 }
 
-fn drawing_zip_save(s: Settings, tests: bool) -> Response {
-    let (name, data) = match build_zip(&s, tests) {
+fn drawing_zip_save(s: Settings, tests: bool, align_test: bool) -> Response {
+    let (name, data) = match build_zip(&s, tests, align_test) {
         Ok(z) => z,
         Err(r) => return r,
     };
@@ -520,8 +556,8 @@ fn drawing_zip_save(s: Settings, tests: bool) -> Response {
     }
 }
 
-fn drawing_zip(s: Settings, tests: bool) -> Response {
-    let (name, data) = match build_zip(&s, tests) {
+fn drawing_zip(s: Settings, tests: bool, align_test: bool) -> Response {
+    let (name, data) = match build_zip(&s, tests, align_test) {
         Ok(z) => z,
         Err(r) => return r,
     };
@@ -634,21 +670,21 @@ pub fn router(state: St) -> Router {
         .route(
             "/api/drawing/zip/save",
             post(|Query(q): Query<HashMap<String, String>>, b: Bytes| async move {
-                let tests = match qbool(&q, "tests", true) {
-                    Ok(t) => t,
-                    Err(r) => return r,
+                let (tests, align_test) = match (qbool(&q, "tests", true), qbool(&q, "align", false)) {
+                    (Ok(t), Ok(a)) => (t, a),
+                    (Err(r), _) | (_, Err(r)) => return r,
                 };
-                with_settings("/api/drawing/zip/save", b, move |s| drawing_zip_save(s, tests)).await
+                with_settings("/api/drawing/zip/save", b, move |s| drawing_zip_save(s, tests, align_test)).await
             }),
         )
         .route(
             "/api/drawing/zip",
             post(|Query(q): Query<HashMap<String, String>>, b: Bytes| async move {
-                let tests = match qbool(&q, "tests", true) {
-                    Ok(t) => t,
-                    Err(r) => return r,
+                let (tests, align_test) = match (qbool(&q, "tests", true), qbool(&q, "align", false)) {
+                    (Ok(t), Ok(a)) => (t, a),
+                    (Err(r), _) | (_, Err(r)) => return r,
                 };
-                with_settings("/api/drawing/zip", b, move |s| drawing_zip(s, tests)).await
+                with_settings("/api/drawing/zip", b, move |s| drawing_zip(s, tests, align_test)).await
             }),
         )
         .route(
@@ -709,6 +745,11 @@ pub fn router(state: St) -> Router {
                 .await
             }),
         )
+        .route(
+            "/api/drawing/align",
+            post(|b: Bytes| async move { with_settings("/api/drawing/align", b, align_info).await }),
+        )
+        .route("/api/drawing/align/apply", post(align_apply))
         .route(
             "/api/printer/ports",
             get(|| async { blocking("/api/printer/ports".into(), || ok(json!(printer::list_ports()))).await }),
@@ -926,7 +967,23 @@ fn printer_print(s: Settings, q: HashMap<String, String>) -> Response {
         feed_travel: s.printer.feed_travel,
     };
     let kind = q.get("kind").map_or("text", String::as_str);
-    let (code, map, label, part) = if kind == "drawing" {
+    let (code, map, label, part) = if kind == "align" {
+        let part: usize = q.get("part").and_then(|v| v.trim().parse().ok()).unwrap_or(1);
+        let c = dp::compose_drawing(&s, &loader);
+        if part < 1 || part > c.parts.len() {
+            return detail(StatusCode::BAD_REQUEST, &format!("Нет прохода {part}"));
+        }
+        let p = &c.parts[part - 1];
+        let marks = align::align_marks(&c);
+        let code = if marks.is_empty() {
+            align_files(&c).map(|_| String::new())
+        } else {
+            align::make_align_gcode(&c, &marks, p)
+        };
+        (code, c.machine_map(p), format!("тест совмещения, проход {part} из {}", c.parts.len()), part)
+    } else if kind == "reach" {
+        (calibration::make_reach_check_gcode(&s), dp::MachineMap::for_text(&s), "проверка углов".to_string(), 0)
+    } else if kind == "drawing" {
         let part: usize = match q.get("part").map(|v| v.trim().parse::<usize>()) {
             None => 1,
             Some(Ok(v)) => v,
@@ -968,4 +1025,77 @@ fn printer_print(s: Settings, q: HashMap<String, String>) -> Response {
     let lines = printer::protocol::gcode_lines(&code);
     let job = printer::Job { label, kind: kind.to_string(), part, test, lines, map, pen };
     printer_result(PRINTER.start(job))
+}
+
+fn align_info(s: Settings) -> Response {
+    let c = dp::compose_drawing(&s, &loader);
+    if !c.errors.is_empty() {
+        return refused(c.errors.clone());
+    }
+    let marks = align::align_marks(&c);
+    let index = |r: i64| c.parts.iter().find(|p| p.rotation == r).map_or(0, |p| p.index);
+    let (w, h) = c.layout.as_ref().map_or((0.0, 0.0), |l| (l.width, l.height));
+    let parts: Vec<Value> = c
+        .parts
+        .iter()
+        .map(|p| {
+            let cn = corner(p.rotation);
+            json!({"index": p.index, "rotation": p.rotation, "corner": cn, "corner_name": corner_name(cn),
+                   "dx": p.dx, "dy": p.dy, "region": [p.region.0, p.region.1, p.region.2, p.region.3]})
+        })
+        .collect();
+    let mk: Vec<Value> = marks
+        .iter()
+        .map(|m| {
+            json!({"id": m.id, "x": round_to(m.x, 2), "y": round_to(m.y, 2), "size": m.size, "ticks": m.ticks,
+                   "scale_pass": index(m.scale_rot), "pointer_pass": index(m.pointer_rot)})
+        })
+        .collect();
+    let errors = if marks.is_empty() { align_files(&c).err().unwrap_or_default() } else { Vec::new() };
+    ok(json!({"sheet": {"width": w, "height": h}, "parts": parts, "marks": mk, "errors": errors}))
+}
+
+#[derive(Deserialize)]
+struct AlignReadingIn {
+    mark: usize,
+    x: f64,
+    y: f64,
+}
+
+#[derive(Deserialize)]
+struct AlignApply {
+    settings: Settings,
+    readings: Vec<AlignReadingIn>,
+}
+
+async fn align_apply(b: Bytes) -> Response {
+    let req: AlignApply = match parse_body("/api/drawing/align/apply", &b) {
+        Ok(r) => r,
+        Err(r) => return r,
+    };
+    blocking("/api/drawing/align/apply".into(), move || {
+        let c = dp::compose_drawing(&req.settings, &loader);
+        if !c.errors.is_empty() {
+            return refused(c.errors.clone());
+        }
+        let marks = align::align_marks(&c);
+        let readings: Vec<align::AlignReading> =
+            req.readings.iter().map(|r| align::AlignReading { mark: r.mark, x: r.x, y: r.y }).collect();
+        match align::align_correction(&c, &marks, &readings) {
+            Err(e) => refused(e),
+            Ok(offsets) => {
+                let changes: Vec<Value> = c
+                    .parts
+                    .iter()
+                    .map(|p| {
+                        let new = offsets.get(&p.rotation.to_string()).copied().unwrap_or((0.0, 0.0));
+                        json!({"index": p.index, "rotation": p.rotation, "old": [p.dx, p.dy], "new": [new.0, new.1],
+                               "shift": round_to((new.0 - p.dx).hypot(new.1 - p.dy), 2)})
+                    })
+                    .collect();
+                ok(json!({"offsets": offsets, "parts": changes}))
+            }
+        }
+    })
+    .await
 }

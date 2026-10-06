@@ -4,6 +4,8 @@ use crate::layout::line_baselines;
 use crate::numeric;
 use crate::settings::Settings;
 
+pub const END_PAD: [&str; 8] = ["G4 P100"; 8];
+
 pub fn fmt(v: f64) -> String {
     let s = format!("{v:.2}");
     if s == "-0.00" { "0.00".into() } else { s }
@@ -170,6 +172,7 @@ pub fn generate_gcode(strokes: &[Vec<Point>], s: &Settings, header: &[String], i
     }
     lines.push(format!("G0 Z{} F{fz}", fmt(pr.pen_up_z + pr.end_lift)));
     lines.push("M400".into());
+    lines.extend(END_PAD.iter().map(|s| s.to_string()));
     let mut out = lines.join("\n");
     out.push('\n');
     out

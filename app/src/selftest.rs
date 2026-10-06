@@ -133,14 +133,20 @@ fn sheet_checks() -> Check {
 fn gcode_format() -> Check {
     let code = make_gcode(&comp(&outline_default())).map_err(|e| e.join("; "))?;
     let body: Vec<&str> = code.lines().filter(|l| !l.is_empty() && !l.starts_with(';')).collect();
-    let re = Regex::new(r"^(G0|G1|G21|G90|G92 X0 Y0 Z0|M104 S0|M140 S0|M420 S0|M211 S0|M400)\b").expect("regex");
+    let re =
+        Regex::new(r"^(G0|G1|G4 P100|G21|G90|G92 X0 Y0 Z0|M104 S0|M140 S0|M420 S0|M211 S0|M400)\b").expect("regex");
     let bad: Vec<&&str> = body.iter().filter(|l| !re.is_match(l)).take(3).collect();
     ensure(bad.is_empty(), format!("{bad:?}"))?;
     ensure(!code.contains("G28") && !code.contains("M109") && !code.contains("M190"), "нагрев или G28")?;
+    let pad = handwriter_core::gcode::END_PAD.len();
     let n = body.len();
     ensure(
-        n >= 2 && body[n - 1] == "M400" && body[n - 2].starts_with("G0 Z14.00") && !code.contains("G0 X0.00 Y0.00"),
-        "конец файла: ожидается подъём на Z14.00 без возврата в ноль",
+        n >= pad + 2
+            && body[n - pad..].iter().all(|l| *l == "G4 P100")
+            && body[n - pad - 1] == "M400"
+            && body[n - pad - 2].starts_with("G0 Z14.00")
+            && !code.contains("G0 X0.00 Y0.00"),
+        "конец файла: ожидается подъём на Z14.00, M400 и запас из пауз, без возврата в ноль",
     )?;
     let (test, _) = make_test_gcode(&plain()).map_err(|e| e.join("; "))?;
     ensure(test.contains("G92 X0 Y0 Z0"), "тестовый файл без G92")?;

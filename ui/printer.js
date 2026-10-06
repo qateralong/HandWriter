@@ -36,7 +36,7 @@ function prReady() {
 function openPrinter(open) {
   PR.open = open;
   localPut("hw-printer-open", open ? "1" : "0");
-  $("printerPanel").hidden = !open;
+  $("printerPanel").classList.toggle("open", open);
   $("printerBtn").setAttribute("aria-expanded", String(open));
   if (open) {
     closePopovers();
@@ -208,6 +208,11 @@ function renderJobs() {
     row.append(what, t, go);
     box.appendChild(row);
   }
+  if (state.mode === "drawing" && jobs.length > 1) {
+    box.appendChild(h("div", { class: "pp-row pp-align" },
+      h("span", { class: "muted", text: "Линии на стыках не сходятся?" }),
+      h("button", { class: "btn small", onclick: () => openAlign(true) }, "Совместить проходы…")));
+  }
   if (fin && fin.kind === "drawing" && state.mode === "drawing") {
     const next = jobs.find((j) => j.part === fin.part + 1);
     if (next && !active) {
@@ -224,7 +229,7 @@ function renderPrinter() {
   const status = st?.status || "disconnected";
   const dot = $("printerBtn").querySelector(".dot");
   dot.className = "dot " + status;
-  $("printerBtn").title = `Принтер по кабелю: ${PR_STATUS[status]}`;
+  setTip($("printerBtn"), `Принтер по кабелю: ${PR_STATUS[status]}`);
   if (!PR.open) return;
   const pill = $("ppStatus");
   pill.className = "pill " + status;
@@ -254,6 +259,7 @@ function renderPrinter() {
   $("ppPos").title = r ? `Принтер сообщает: X${n2(r.x)} Y${n2(r.y)} Z${n2(r.z)}` : "";
   const canMove = status === "idle" || status === "paused";
   for (const b of $("ppMove").querySelectorAll("button")) b.disabled = !canMove;
+  $("ppCalib").disabled = false;
   for (const b of $("ppSteps").children) b.classList?.toggle("on", Number(b.dataset.step) === PR.step);
   $("ppZero").disabled = status !== "idle";
   $("ppCmd").disabled = !canMove;
@@ -310,6 +316,8 @@ async function poll() {
     }
     appendLog(st.log);
     renderPrinter();
+    if (typeof calLive === "function") calLive();
+    if (typeof alLive === "function") alLive();
     if (st.connected || s.items.length) draw();
   } catch {
     PR.st = null;
@@ -318,7 +326,8 @@ async function poll() {
     PR.inFlight = false;
   }
   const s = PR.st?.status;
-  schedulePoll(s === "printing" ? 400 : PR.open || s === "paused" || s === "connecting" ? 1000 : 3000);
+  const calib = (typeof CAL !== "undefined" && CAL.open) || (typeof AL !== "undefined" && AL.open);
+  schedulePoll(s === "printing" || (calib && PR.st?.connected) ? 400 : PR.open || calib || s === "paused" || s === "connecting" ? 1000 : 3000);
 }
 
 function schedulePoll(ms) {
@@ -377,6 +386,7 @@ $("ppHome").onclick = () => prSend(["G28 X Y"]);
 $("ppPenUp").onclick = () => prSend(["G90", `G0 Z${n2(state.settings.printer.pen_up_z)} F${Math.round(state.settings.printer.feed_z)}`]);
 $("ppPenDown").onclick = () => prSend(["G90", `G1 Z${n2(state.settings.printer.pen_down_z)} F${Math.round(state.settings.printer.feed_z)}`]);
 $("ppZero").onclick = prZero;
+$("ppCalib").onclick = () => openCalib(true);
 $("ppPause").onclick = () => prCall("/api/printer/pause");
 $("ppResume").onclick = () => prCall("/api/printer/resume");
 $("ppStop").onclick = () => {

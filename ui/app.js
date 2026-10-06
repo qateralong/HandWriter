@@ -14,6 +14,36 @@ const state = {
   zoom: { f: 1, px: 0, py: 0 },
 };
 
+const MOTION = matchMedia("(prefers-reduced-motion: reduce)");
+
+function reveal(el, on) {
+  if (on) {
+    el.classList.remove("leaving");
+    el.hidden = false;
+    return;
+  }
+  if (el.hidden || el.classList.contains("leaving")) return;
+  if (MOTION.matches) {
+    el.hidden = true;
+    return;
+  }
+  el.classList.add("leaving");
+  const done = () => {
+    if (!el.classList.contains("leaving")) return;
+    el.classList.remove("leaving");
+    el.hidden = true;
+  };
+  el.addEventListener("animationend", (e) => e.target === el && done(), { once: true });
+  setTimeout(done, 320);
+}
+
+const isOpen = (el) => !el.hidden && !el.classList.contains("leaving");
+
+function setTip(el, text) {
+  if (el.dataset.tip != null && !el.title) el.dataset.tip = text;
+  else el.title = text;
+}
+
 function localGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function localPut(k, v) { try { localStorage.setItem(k, v); } catch { } }
 
@@ -40,9 +70,9 @@ let toastTimer = 0;
 function toast(text, ms = 5000) {
   const t = $("toast");
   t.textContent = text;
-  t.hidden = false;
+  reveal(t, true);
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (t.hidden = true), ms);
+  toastTimer = setTimeout(() => reveal(t, false), ms);
 }
 
 function fmtTime(s) {
@@ -53,16 +83,55 @@ function fmtTime(s) {
   return h ? `${h} ч ${m % 60} мин` : `${m} мин`;
 }
 
+const dismissed = new Set();
+let msgsOpen = false;
+
 function showMessages(errors, warnings) {
   const box = $("messages");
   box.innerHTML = "";
+  const items = [];
   for (const [list, cls] of [[errors, "err"], [warnings, "warn"]]) {
-    for (const text of list || []) {
-      const d = document.createElement("div");
-      d.className = `msg ${cls}`;
-      d.textContent = text;
-      box.appendChild(d);
+    for (const text of list || []) if (cls === "err" || !dismissed.has(text)) items.push([text, cls]);
+  }
+  const limit = msgsOpen ? items.length : 2;
+  items.forEach(([text, cls], i) => {
+    const d = document.createElement("div");
+    d.className = `msg ${cls}`;
+    if (i >= limit) d.hidden = true;
+    const t = document.createElement("span");
+    t.textContent = text;
+    d.appendChild(t);
+    if (/не измерен|not measured/.test(text) && typeof openCalib === "function") {
+      const b = document.createElement("button");
+      b.className = "btn small act";
+      b.textContent = "Откалибровать";
+      b.onclick = () => openCalib(true);
+      d.appendChild(b);
     }
+    if (cls === "warn") {
+      const x = document.createElement("button");
+      x.className = "msg-x";
+      x.setAttribute("aria-label", "Скрыть");
+      x.title = "Скрыть";
+      x.textContent = "×";
+      x.onclick = () => {
+        dismissed.add(text);
+        d.classList.add("leaving");
+        setTimeout(() => showMessages(errors, warnings), 220);
+      };
+      d.appendChild(x);
+    }
+    box.appendChild(d);
+  });
+  if (items.length > 2) {
+    const more = document.createElement("button");
+    more.className = "msg-more";
+    more.textContent = msgsOpen ? "Свернуть ▴" : `Ещё ${items.length - 2} ▾`;
+    more.onclick = () => {
+      msgsOpen = !msgsOpen;
+      showMessages(errors, warnings);
+    };
+    box.appendChild(more);
   }
 }
 
@@ -125,7 +194,7 @@ function renderChrome() {
   if (drawing) {
     $("timeVal").textContent = fmtTime(totalTime(p));
     $("downloadBtn").disabled = !p || (p.errors || []).length > 0 || n === 0;
-    $("downloadBtn").title = $("downloadBtn").disabled ? "Сначала исправь ошибки на листе" : "Архив всех проходов";
+    setTip($("downloadBtn"), $("downloadBtn").disabled ? "Сначала исправь ошибки на листе" : "Архив всех проходов");
     const imp = p?.import;
     $("fileName").textContent = imp ? imp.name : "";
     $("fileName").title = imp ? `${imp.name}${imp.units_note ? " — " + imp.units_note : ""}` : "";
@@ -133,7 +202,7 @@ function renderChrome() {
     const t = state.text;
     $("timeVal").textContent = fmtTime(t?.stats?.time_s);
     $("downloadBtn").disabled = !t || (t.errors || []).length > 0 || !t.strokes?.length;
-    $("downloadBtn").title = $("downloadBtn").disabled ? "Сначала исправь ошибки на листе" : "Gcode этого листа";
+    setTip($("downloadBtn"), $("downloadBtn").disabled ? "Сначала исправь ошибки на листе" : "Gcode этого листа");
     $("fileName").textContent = t?.font ? t.font.name : "";
     $("fileName").title = t?.word_count != null ? `Слов в тексте: ${t.word_count}` : "";
   }
@@ -235,13 +304,13 @@ function drawSheet(box, part, caption) {
 
   if (caption) {
     ctx.fillStyle = css("--text");
-    ctx.font = "600 13px system-ui, sans-serif";
+    ctx.font = "700 13px Nunito, system-ui, sans-serif";
     ctx.textBaseline = "top";
     ctx.fillText(caption.title, box.x + pad, box.y + 10, box.w - 2 * pad);
     if (caption.sub) {
       const w = ctx.measureText(caption.title).width;
       ctx.fillStyle = css("--muted");
-      ctx.font = "13px system-ui, sans-serif";
+      ctx.font = "600 13px Nunito, system-ui, sans-serif";
       ctx.fillText(caption.sub, box.x + pad + w + 10, box.y + 10, Math.max(0, box.w - 2 * pad - w - 10));
     }
   }
@@ -307,7 +376,31 @@ cv.addEventListener("pointerup", (e) => {
   drag = null;
   cv.classList.remove("drag");
 });
-cv.addEventListener("dblclick", () => { state.zoom = { f: 1, px: 0, py: 0 }; draw(); });
+let zoomAnim = 0;
+function animateZoom(to) {
+  cancelAnimationFrame(zoomAnim);
+  const from = { ...state.zoom };
+  if (MOTION.matches) {
+    state.zoom = to;
+    draw();
+    return;
+  }
+  const t0 = performance.now();
+  const step = (now) => {
+    const t = Math.min(1, (now - t0) / 260);
+    const e = 1 - Math.pow(1 - t, 3);
+    state.zoom = { f: from.f + (to.f - from.f) * e, px: from.px + (to.px - from.px) * e, py: from.py + (to.py - from.py) * e };
+    draw();
+    if (t < 1) zoomAnim = requestAnimationFrame(step);
+  };
+  zoomAnim = requestAnimationFrame(step);
+}
+function swapFade() {
+  cv.classList.remove("swap");
+  void cv.offsetWidth;
+  cv.classList.add("swap");
+}
+cv.addEventListener("dblclick", () => animateZoom({ f: 1, px: 0, py: 0 }));
 cv.addEventListener("wheel", (e) => {
   e.preventDefault();
   const f = Math.exp(-e.deltaY * 0.0015);
@@ -321,6 +414,7 @@ cv.addEventListener("wheel", (e) => {
   draw();
 }, { passive: false });
 new ResizeObserver(draw).observe(cv);
+document.fonts?.ready.then(() => draw());
 addEventListener("themechange", draw);
 
 $("modeSeg").addEventListener("click", (e) => {
@@ -328,6 +422,7 @@ $("modeSeg").addEventListener("click", (e) => {
   if (!b || b.dataset.mode === state.mode) return;
   state.mode = b.dataset.mode;
   localPut("hw-mode", state.mode);
+  swapFade();
   state.zoom = { f: 1, px: 0, py: 0 };
   closePopovers();
   buildForms();
@@ -341,20 +436,23 @@ $("viewSeg").addEventListener("click", (e) => {
   if (!b) return;
   state.view = b.dataset.view;
   localPut("hw-view", state.view);
+  swapFade();
   state.zoom = { f: 1, px: 0, py: 0 };
   renderChrome();
   draw();
 });
 function setPass(i) {
   const n = state.preview?.parts?.length || 0;
-  state.pass = Math.min(Math.max(1, i), Math.max(1, n));
+  const next = Math.min(Math.max(1, i), Math.max(1, n));
+  if (next !== state.pass) swapFade();
+  state.pass = next;
   renderChrome();
   draw();
 }
 $("prevPass").onclick = () => setPass(state.pass - 1);
 $("nextPass").onclick = () => setPass(state.pass + 1);
 addEventListener("keydown", (e) => {
-  if (e.target.closest("input, select, textarea") || state.view !== "one") return;
+  if (e.target.closest?.("input, select, textarea") || state.view !== "one") return;
   if (e.key === "ArrowLeft") setPass(state.pass - 1);
   if (e.key === "ArrowRight") setPass(state.pass + 1);
 });
@@ -370,7 +468,7 @@ function specialOptions(item) {
   const { f, input } = item;
   let opts = null;
   if (f.type === "file") opts = (state.files || []).map((x) => [x.spec, x.label]);
-  if (f.type === "theme") opts = [["auto", "как в системе"], ["light", "светлая"], ["dark", "тёмная"]];
+  if (f.type === "theme") opts = [["auto", "Как в системе"], ["light", "Светлая"], ["dark", "Тёмная"]];
   if (f.type === "lang") opts = appInfo.langs;
   if (f.type === "font") {
     opts = state.fonts.map((x) => [x.spec, `${x.label} · ${x.mode === "outlines" ? "контуры" : "штрихи"}`]);
@@ -405,6 +503,8 @@ function itemValue(item) {
     case "font": return S.font;
     case "profile": return S.profiles[S.active_profile] ? S.active_profile : "";
     case "seed":
+    case "calib":
+    case "align":
     case "fontUpload":
     case "testFile": return null;
     default: return fieldValue(item.f, S);
@@ -470,6 +570,15 @@ async function onFieldChange(item) {
   }
   if (f.type === "testFile") {
     await downloadTextGcode("/api/testfile");
+    return;
+  }
+  if (f.type === "align") {
+    openAlign(true);
+    return;
+  }
+  if (f.type === "calib") {
+    openSettings(false);
+    openCalib(true);
     return;
   }
   if (f.type === "seed") {
@@ -545,7 +654,7 @@ function showTab(id) {
 }
 
 function openSettings(open) {
-  $("settingsPanel").hidden = !open;
+  reveal($("settingsPanel"), open);
   if (open) {
     closePopovers();
     syncForms();
@@ -560,7 +669,7 @@ const POPS = [["paramsPop", "paramsBtn"], ["handPop", "handBtn"], ["textPop", "t
 function openPop(id, open) {
   for (const [pid, bid] of POPS) {
     const on = pid === id ? open : false;
-    $(pid).hidden = !on;
+    reveal($(pid), on);
     $(bid).setAttribute("aria-expanded", String(on));
   }
   if (open) {
@@ -575,7 +684,7 @@ function openParams(open) {
   openPop("paramsPop", open);
 }
 for (const [pid, bid] of POPS) {
-  $(bid).addEventListener("click", (e) => { e.stopPropagation(); openPop(pid, $(pid).hidden); });
+  $(bid).addEventListener("click", (e) => { e.stopPropagation(); openPop(pid, !isOpen($(pid))); });
 }
 $("paramsClose").onclick = closePopovers;
 $("handClose").onclick = closePopovers;
@@ -583,12 +692,14 @@ $("textClose").onclick = closePopovers;
 document.addEventListener("mousedown", (e) => {
   for (const [pid, bid] of POPS) {
     const pop = $(pid);
-    if (!pop.hidden && !pop.contains(e.target) && !$(bid).contains(e.target)) openPop(pid, false);
+    if (isOpen(pop) && !pop.contains(e.target) && !$(bid).contains(e.target)) openPop(pid, false);
   }
 });
 addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
-  if (!$("settingsPanel").hidden) openSettings(false);
+  if (isOpen($("alignPanel"))) openAlign(false);
+  else if (isOpen($("calibPanel"))) openCalib(false);
+  else if (isOpen($("settingsPanel"))) openSettings(false);
   else closePopovers();
 });
 

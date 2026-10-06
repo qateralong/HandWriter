@@ -1,3 +1,4 @@
+pub mod align;
 pub mod model;
 pub mod ops;
 pub mod passes;

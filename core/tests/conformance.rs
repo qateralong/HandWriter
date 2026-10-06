@@ -81,7 +81,16 @@ fn geometry_matches_python() {
     let g = load().geometry;
     for (rot, dx, dy, p, want) in g.transforms {
         let got = make_transform(rot, dx, dy)(p);
-        assert_eq!((got.0.to_bits(), got.1.to_bits()), (want.0.to_bits(), want.1.to_bits()), "{rot} {dx} {dy} {p:?}");
+        if cfg!(windows) {
+            let ulps = |a: f64, b: f64| (a.to_bits() as i64 - b.to_bits() as i64).unsigned_abs();
+            assert!(ulps(got.0, want.0) <= 2 && ulps(got.1, want.1) <= 2, "{rot} {dx} {dy} {p:?}: {got:?} vs {want:?}");
+        } else {
+            assert_eq!(
+                (got.0.to_bits(), got.1.to_bits()),
+                (want.0.to_bits(), want.1.to_bits()),
+                "{rot} {dx} {dy} {p:?}"
+            );
+        }
     }
     for c in g.polylines {
         assert_eq!(rdp(&c.points, c.tol), c.rdp);

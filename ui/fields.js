@@ -55,6 +55,8 @@ const QUICK = [
       num("drawing.sheet.height", "Высота", { unit: "мм", step: 1, show: (S) => S.drawing.sheet.format === "custom" }),
       sel("drawing.sheet.orientation", "Ориентация", [["auto", "авто (по чертежу)"], ["portrait", "книжная"], ["landscape", "альбомная"]]),
       SHEET_MODE,
+      { type: "align", label: "Совместить проходы…", hint: "Если линии разных проходов не сходятся на стыке — тест с метками и поправка.",
+        show: (S, P) => (P?.parts?.length || 0) > 1 },
     ],
   },
   {
@@ -310,6 +312,7 @@ const TABS = [
       {
         title: "Стол и доступная область",
         fields: [
+          { type: "calib", label: "Калибровка: где достаёт карандаш…", hint: "Пошагово: ноль в углу листа и края хода в четыре стороны. Можно по кабелю или с SD-карты." },
           { type: "travel", label: "Доступная область измерена" },
           num("printer.travel.x_min", "X от", { unit: "мм", step: 0.5, show: travelOn }),
           num("printer.travel.x_max", "X до", { unit: "мм", step: 0.5, show: travelOn }),
@@ -412,11 +415,11 @@ function buildForm(container, groups, hooks) {
         row.className = "frow info";
         input = document.createElement("span");
         row.appendChild(input);
-      } else if (f.type === "seed" || f.type === "fontUpload" || f.type === "testFile") {
+      } else if (f.type === "seed" || f.type === "fontUpload" || f.type === "testFile" || f.type === "calib" || f.type === "align") {
         row.className = "frow action";
         input = document.createElement("button");
         input.type = "button";
-        input.className = "btn small";
+        input.className = f.type === "calib" ? "btn primary" : "btn small";
         input.textContent = f.label;
         row.appendChild(input);
       } else if (f.type === "bool" || f.type === "travel") {

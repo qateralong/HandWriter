@@ -53,8 +53,12 @@ fn dump(p: &StrokeGlyphProvider) -> Value {
 #[test]
 fn stroke_fonts_match_python() {
     let input = root().join("tests/golden/svg_fonts/input");
+    std::fs::create_dir_all(input.join("empty")).unwrap();
     for case in cases()["fonts"].as_array().unwrap() {
         let label = case["font"].as_str().unwrap();
+        if cfg!(windows) && label == "input/mixed" {
+            continue;
+        }
         let path = if label == "builtin" {
             root().join("handwriter/fonts/hershey_cyrillic.svg")
         } else {

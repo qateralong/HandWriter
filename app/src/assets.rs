@@ -32,13 +32,20 @@ macro_rules! ui_asset {
     };
 }
 
-pub const UI: [Asset; 6] = [
+pub const UI: [Asset; 13] = [
     ui_asset!("index.html"),
     ui_asset!("app.css"),
+    ui_asset!("align.js"),
     ui_asset!("app.js"),
+    ui_asset!("Comfortaa.ttf"),
+    ui_asset!("Comfortaa-OFL.txt"),
+    ui_asset!("Nunito.ttf"),
+    ui_asset!("Nunito-OFL.txt"),
+    ui_asset!("calibration.js"),
     ui_asset!("fields.js"),
     ui_asset!("printer.js"),
     ui_asset!("theme.js"),
+    ui_asset!("widgets.js"),
 ];
 
 pub const FONTS: [Asset; 3] = [

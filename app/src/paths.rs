@@ -69,3 +69,37 @@ pub fn builtin_fonts_dir() -> PathBuf {
 pub fn font_paths() -> FontPaths {
     FontPaths { builtin_dir: builtin_fonts_dir(), user_fonts_dir: user_fonts_dir() }
 }
+
+pub fn downloads_dir() -> PathBuf {
+    let home = home();
+    if !cfg!(windows) {
+        let cfg = env::var_os("XDG_CONFIG_HOME")
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".config"));
+        if let Ok(text) = fs::read_to_string(cfg.join("user-dirs.dirs")) {
+            for line in text.lines() {
+                if let Some(v) = line.trim().strip_prefix("XDG_DOWNLOAD_DIR=") {
+                    let v = v.trim_matches('"');
+                    let p = match v.strip_prefix("$HOME") {
+                        Some(rest) => home.join(rest.trim_start_matches('/')),
+                        None => PathBuf::from(v),
+                    };
+                    if p != home {
+                        return ensure(p);
+                    }
+                }
+            }
+        }
+    }
+    ensure(home.join("Downloads"))
+}
+
+pub fn unique_path(dir: &std::path::Path, name: &str) -> PathBuf {
+    let first = dir.join(name);
+    if !first.exists() {
+        return first;
+    }
+    let (stem, ext) = name.rsplit_once('.').map_or((name, String::new()), |(s, e)| (s, format!(".{e}")));
+    (2..).map(|i| dir.join(format!("{stem} ({i}){ext}"))).find(|p| !p.exists()).expect("free name")
+}

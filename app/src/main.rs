@@ -135,7 +135,8 @@ fn run_window(args: &Args) -> i32 {
             let url = format!("http://127.0.0.1:{}/", listener.local_addr()?.port());
             spawn_server(listener, Arc::new(Activity::new()));
             logs::info("handwriter.launcher", &format!("Сервер {url} готов, открываю окно"));
-            tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::External(url.parse()?))
+            let app_url = format!("{url}?app=1");
+            tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::External(app_url.parse()?))
                 .title("HandWriter")
                 .inner_size(1400.0, 900.0)
                 .min_inner_size(800.0, 600.0)

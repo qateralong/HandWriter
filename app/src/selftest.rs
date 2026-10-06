@@ -15,7 +15,7 @@ use handwriter_core::settings::{
 use handwriter_core::text::{Word, break_positions, normalize, process_text};
 use regex::Regex;
 
-use crate::assets::{FONTS, STATIC, install_fonts};
+use crate::assets::{FONTS, STATIC, UI, install_fonts};
 use crate::paths::{font_paths, log_path, settings_path, user_drawings_dir};
 
 type Check = Result<String, String>;
@@ -63,7 +63,7 @@ fn data_files() -> Check {
     let dir = font_paths().builtin_dir;
     let missing: Vec<&str> = FONTS.iter().filter(|a| !dir.join(a.name).exists()).map(|a| a.name).collect();
     ensure(missing.is_empty(), format!("нет файлов: {}", missing.join(", ")))?;
-    Ok(format!("{} файлов на месте", STATIC.len() + FONTS.len()))
+    Ok(format!("{} файлов на месте", STATIC.len() + UI.len() + FONTS.len()))
 }
 
 fn hyphen_ok() -> Check {
@@ -138,10 +138,13 @@ fn gcode_format() -> Check {
     ensure(bad.is_empty(), format!("{bad:?}"))?;
     ensure(!code.contains("G28") && !code.contains("M109") && !code.contains("M190"), "нагрев или G28")?;
     let n = body.len();
-    ensure(n >= 3 && body[n - 2] == "G0 X0.00 Y0.00 F3000" && body[n - 1] == "M400", "конец файла")?;
+    ensure(
+        n >= 2 && body[n - 1] == "M400" && body[n - 2].starts_with("G0 Z14.00") && !code.contains("G0 X0.00 Y0.00"),
+        "конец файла: ожидается подъём на Z14.00 без возврата в ноль",
+    )?;
     let (test, _) = make_test_gcode(&plain()).map_err(|e| e.join("; "))?;
     ensure(test.contains("G92 X0 Y0 Z0"), "тестовый файл без G92")?;
-    Ok(format!("{n} команд, только G0/G1, без нагрева и G28"))
+    Ok(format!("{n} команд, только G0/G1, без нагрева и G28, в конце подъём без возврата в ноль"))
 }
 
 fn determinism() -> Check {

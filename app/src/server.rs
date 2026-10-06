@@ -32,7 +32,7 @@ use regex::Regex;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::assets::static_file;
+use crate::assets::{static_file, ui_file};
 use crate::logs;
 use crate::paths::{font_paths, log_path, settings_path, user_drawings_dir, user_fonts_dir};
 
@@ -169,17 +169,35 @@ async fn blocking<F: FnOnce() -> Response + Send + 'static>(path: String, f: F) 
     }
 }
 
-fn page(name: &str) -> Response {
-    let data = static_file(name).expect("embedded page");
+fn ui_page() -> Response {
+    let data = ui_file("index.html").expect("embedded ui");
     let text = tr_static(std::str::from_utf8(data).expect("utf8 page"));
     ([(header::CONTENT_TYPE, "text/html; charset=utf-8"), (header::CACHE_CONTROL, "no-store")], text).into_response()
 }
 
+async fn ui_handler(UrlPath(name): UrlPath<String>, uri: Uri) -> Response {
+    match ui_file(&name) {
+        Some(data) => asset_response(&name, data),
+        None => detail(StatusCode::NOT_FOUND, &format!("Не найдено: {}", uri.path())),
+    }
+}
+
+fn page(name: &str) -> Response {
+    let data = static_file(name).expect("embedded page");
+    let text =
+        tr_static(std::str::from_utf8(data).expect("utf8 page")).replace("<a href=\"/\"", "<a href=\"/classic\"");
+    ([(header::CONTENT_TYPE, "text/html; charset=utf-8"), (header::CACHE_CONTROL, "no-store")], text).into_response()
+}
+
 async fn static_handler(UrlPath(name): UrlPath<String>, uri: Uri) -> Response {
-    let Some(data) = static_file(&name) else {
-        return detail(StatusCode::NOT_FOUND, &format!("Не найдено: {}", uri.path()));
-    };
-    let ext = Path::new(&name).extension().and_then(|e| e.to_str()).unwrap_or("");
+    match static_file(&name) {
+        Some(data) => asset_response(&name, data),
+        None => detail(StatusCode::NOT_FOUND, &format!("Не найдено: {}", uri.path())),
+    }
+}
+
+fn asset_response(name: &str, data: &'static [u8]) -> Response {
+    let ext = Path::new(name).extension().and_then(|e| e.to_str()).unwrap_or("");
     let ctype = match ext {
         "js" => "text/javascript; charset=utf-8",
         "html" => "text/html; charset=utf-8",
@@ -448,11 +466,11 @@ fn drawing_gcode(s: Settings, q: HashMap<String, String>) -> Response {
     }
 }
 
-fn drawing_zip(s: Settings, tests: bool) -> Response {
-    let c = dp::compose_drawing(&s, &loader);
+fn build_zip(s: &Settings, tests: bool) -> Result<(String, Vec<u8>), Response> {
+    let c = dp::compose_drawing(s, &loader);
     let files = match dp::make_all_files(&c, tests) {
         Ok(f) => f,
-        Err(e) => return refused(e),
+        Err(e) => return Err(refused(e)),
     };
     let mut lines = vec![format!("Рабочих областей: {}", c.parts.len()), String::new()];
     for p in &c.parts {
@@ -472,18 +490,40 @@ fn drawing_zip(s: Settings, tests: bool) -> Response {
         let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
         for f in &files {
             if z.start_file(f.filename.as_str(), opts).is_err() || z.write_all(f.gcode.as_bytes()).is_err() {
-                return detail(StatusCode::INTERNAL_SERVER_ERROR, "zip");
+                return Err(detail(StatusCode::INTERNAL_SERVER_ERROR, "zip"));
             }
         }
         let readme = tr(&lines.join("\n")) + "\n";
         if z.start_file(tr("порядок.txt"), opts).is_err() || z.write_all(readme.as_bytes()).is_err() {
-            return detail(StatusCode::INTERNAL_SERVER_ERROR, "zip");
+            return Err(detail(StatusCode::INTERNAL_SERVER_ERROR, "zip"));
         }
         if z.finish().is_err() {
-            return detail(StatusCode::INTERNAL_SERVER_ERROR, "zip");
+            return Err(detail(StatusCode::INTERNAL_SERVER_ERROR, "zip"));
         }
     }
-    let name = dp::file_stem(&c) + ".zip";
+    Ok((dp::file_stem(&c) + ".zip", buf.into_inner()))
+}
+
+fn drawing_zip_save(s: Settings, tests: bool) -> Response {
+    let (name, data) = match build_zip(&s, tests) {
+        Ok(z) => z,
+        Err(r) => return r,
+    };
+    let path = crate::paths::unique_path(&crate::paths::downloads_dir(), &name);
+    match std::fs::write(&path, data) {
+        Ok(()) => {
+            logs::info("handwriter.server", &format!("Архив сохранён: {}", path.display()));
+            ok(json!({"path": path.display().to_string(), "filename": name}))
+        }
+        Err(e) => detail(StatusCode::INTERNAL_SERVER_ERROR, &format!("Не удалось сохранить архив: {e}")),
+    }
+}
+
+fn drawing_zip(s: Settings, tests: bool) -> Response {
+    let (name, data) = match build_zip(&s, tests) {
+        Ok(z) => z,
+        Err(r) => return r,
+    };
     let ascii: String = name.chars().map(|ch| if ch.is_ascii() && ch != '?' { ch } else { '_' }).collect();
     let quoted: String = name
         .bytes()
@@ -496,7 +536,7 @@ fn drawing_zip(s: Settings, tests: bool) -> Response {
         })
         .collect();
     let disp = format!("attachment; filename=\"{ascii}\"; filename*=UTF-8''{quoted}");
-    let mut r = (StatusCode::OK, buf.into_inner()).into_response();
+    let mut r = (StatusCode::OK, data).into_response();
     r.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("application/zip"));
     if let Ok(v) = HeaderValue::from_str(&disp) {
         r.headers_mut().insert(header::CONTENT_DISPOSITION, v);
@@ -548,7 +588,9 @@ pub fn router(state: St) -> Router {
     Router::new()
         .route("/api/ping", get(ping).post(ping))
         .route("/api/instance", get(instance))
-        .route("/", get(|| async { page("index.html") }))
+        .route("/", get(|| async { ui_page() }))
+        .route("/ui/{name}", get(ui_handler))
+        .route("/classic", get(|| async { page("index.html") }))
         .route("/drawing", get(|| async { page("drawing.html") }))
         .route("/debug", get(|| async { page("debug.html") }))
         .route("/static/{name}", get(static_handler))
@@ -584,6 +626,16 @@ pub fn router(state: St) -> Router {
             "/api/drawing/gcode",
             post(|Query(q): Query<HashMap<String, String>>, b: Bytes| async move {
                 with_settings("/api/drawing/gcode", b, move |s| drawing_gcode(s, q)).await
+            }),
+        )
+        .route(
+            "/api/drawing/zip/save",
+            post(|Query(q): Query<HashMap<String, String>>, b: Bytes| async move {
+                let tests = match qbool(&q, "tests", true) {
+                    Ok(t) => t,
+                    Err(r) => return r,
+                };
+                with_settings("/api/drawing/zip/save", b, move |s| drawing_zip_save(s, tests)).await
             }),
         )
         .route(

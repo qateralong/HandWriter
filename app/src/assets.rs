@@ -26,6 +26,14 @@ pub const STATIC: [Asset; 9] = [
     asset!("static", "theme.js"),
 ];
 
+macro_rules! ui_asset {
+    ($name:literal) => {
+        Asset { name: $name, data: include_bytes!(concat!("../../ui/", $name)) }
+    };
+}
+
+pub const UI: [Asset; 4] = [ui_asset!("index.html"), ui_asset!("app.css"), ui_asset!("app.js"), ui_asset!("theme.js")];
+
 pub const FONTS: [Asset; 3] = [
     asset!("fonts", "BadScript-OFL.txt"),
     asset!("fonts", "BadScript-Regular.ttf"),
@@ -34,6 +42,10 @@ pub const FONTS: [Asset; 3] = [
 
 pub fn static_file(name: &str) -> Option<&'static [u8]> {
     STATIC.iter().find(|a| a.name == name).map(|a| a.data)
+}
+
+pub fn ui_file(name: &str) -> Option<&'static [u8]> {
+    UI.iter().find(|a| a.name == name).map(|a| a.data)
 }
 
 pub fn install_fonts() -> io::Result<()> {

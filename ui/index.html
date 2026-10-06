@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HandWriter</title>
+<link rel="icon" href="/static/icon.png">
+<link rel="stylesheet" href="/ui/app.css">
+<script src="/ui/theme.js"></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <div class="logo"><img src="/static/icon.png" alt=""><span>HandWriter</span></div>
+    <div class="seg" id="modeSeg" role="tablist" aria-label="Режим">
+      <button data-mode="drawing" class="on" role="tab">Чертёж</button>
+      <button data-mode="notebook" role="tab">Тетрадный</button>
+    </div>
+  </div>
+  <div class="center-tools">
+    <div class="seg" id="viewSeg" aria-label="Вид">
+      <button data-view="one" class="on">Один лист</button>
+      <button data-view="all">Все листы</button>
+    </div>
+    <div class="pager" id="pager" hidden>
+      <button id="prevPass" class="icon" title="Предыдущий проход" aria-label="Предыдущий проход">‹</button>
+      <span id="passLabel"></span>
+      <button id="nextPass" class="icon" title="Следующий проход" aria-label="Следующий проход">›</button>
+    </div>
+  </div>
+  <div class="actions">
+    <button id="printerBtn" class="icon round" title="Принтер по кабелю — появится позже" aria-label="Принтер" disabled>
+      <svg viewBox="0 0 24 24"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v7H6z"/></svg>
+      <i class="dot"></i>
+    </button>
+    <button id="settingsBtn" class="icon round" title="Настройки" aria-label="Настройки">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+    <div class="popover" id="settingsPop" hidden>
+      <div class="pop-title">Настройки</div>
+      <label class="row">Тема
+        <select id="themeSel">
+          <option value="auto">как в системе</option>
+          <option value="light">светлая</option>
+          <option value="dark">тёмная</option>
+        </select>
+      </label>
+      <p class="hint">Полная панель настроек появится на следующем шаге. Пока остальные настройки — в <a href="/classic">классическом интерфейсе</a>.</p>
+    </div>
+  </div>
+</header>
+
+<main class="stage" id="stage">
+  <canvas id="cv"></canvas>
+  <div class="messages" id="messages"></div>
+  <div class="busy" id="busy" hidden><span class="spinner"></span><span id="busyText">считаю…</span></div>
+  <div class="placeholder" id="notebookStub" hidden>
+    <h2>Тетрадный режим</h2>
+    <p>Новый вид тетрадного режима появится на следующих шагах.<br>Пока им можно пользоваться в <a href="/classic">классическом интерфейсе</a>.</p>
+  </div>
+</main>
+
+<footer class="bottom">
+  <div class="left">
+    <label class="btn primary" id="uploadBtn">
+      <input type="file" id="fileInput" accept=".svg,.dxf,.pdf,.png,.jpg,.jpeg" hidden>
+      <svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>
+      <span>Загрузить файл</span>
+    </label>
+    <button class="btn" id="paramsBtn" title="Параметры чертежа — появятся на следующем шаге" disabled>
+      <svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+      <span>Чертёж</span>
+    </button>
+    <span class="file" id="fileName"></span>
+  </div>
+  <div class="time" id="timeBox">Время печати: <b id="timeVal">—</b></div>
+  <div class="right">
+    <button class="btn primary" id="downloadBtn" disabled>
+      <svg viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5M4 20h16"/></svg>
+      <span>Скачать gcode</span>
+    </button>
+  </div>
+</footer>
+<div class="toast" id="toast" hidden></div>
+<script src="/static/keepalive.js"></script>
+<script src="/ui/app.js"></script>
+</body>
+</html>

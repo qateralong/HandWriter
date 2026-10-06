@@ -125,6 +125,7 @@ function renderChrome() {
   if (drawing) {
     $("timeVal").textContent = fmtTime(totalTime(p));
     $("downloadBtn").disabled = !p || (p.errors || []).length > 0 || n === 0;
+    $("downloadBtn").title = $("downloadBtn").disabled ? "Сначала исправь ошибки на листе" : "Архив всех проходов";
     const imp = p?.import;
     $("fileName").textContent = imp ? imp.name : "";
     $("fileName").title = imp ? `${imp.name}${imp.units_note ? " — " + imp.units_note : ""}` : "";
@@ -132,6 +133,7 @@ function renderChrome() {
     const t = state.text;
     $("timeVal").textContent = fmtTime(t?.stats?.time_s);
     $("downloadBtn").disabled = !t || (t.errors || []).length > 0 || !t.strokes?.length;
+    $("downloadBtn").title = $("downloadBtn").disabled ? "Сначала исправь ошибки на листе" : "Gcode этого листа";
     $("fileName").textContent = t?.font ? t.font.name : "";
     $("fileName").title = t?.word_count != null ? `Слов в тексте: ${t.word_count}` : "";
   }
@@ -325,6 +327,7 @@ $("modeSeg").addEventListener("click", (e) => {
   localPut("hw-mode", state.mode);
   state.zoom = { f: 1, px: 0, py: 0 };
   closePopovers();
+  buildForms();
   showMessages([], []);
   renderChrome();
   draw();
@@ -412,7 +415,15 @@ function syncForms() {
   for (const item of [...quickItems, ...handItems, ...settingsItems]) {
     const { f, g, row, input } = item;
     specialOptions(item);
-    const visible = (!g.show || g.show(S, P)) && (!f.show || f.show(S, P));
+    const P2 = state.mode === "notebook" ? state.text : P;
+    const visible = (!g.mode || g.mode === state.mode) && (!g.show || g.show(S, P2)) && (!f.show || f.show(S, P2));
+    if (f.type === "info") {
+      const t = f.text(S, P2);
+      input.textContent = t;
+      row.hidden = !visible || !t;
+      if (!groups.has(item.group)) groups.set(item.group, false);
+      continue;
+    }
     row.hidden = !visible;
     if (row.nextElementSibling?.classList.contains("fhint")) row.nextElementSibling.hidden = !visible;
     input.disabled = !!f.disabled?.(S, P);
@@ -509,7 +520,7 @@ function buildForms() {
   handItems = buildForm($("handForm"), HAND, { change: onFieldChange });
   const nav = $("settingsTabs");
   nav.innerHTML = "";
-  for (const t of TABS) {
+  for (const t of TABS.filter((x) => !x.mode || x.mode === state.mode)) {
     const b = document.createElement("button");
     b.textContent = t.title;
     b.dataset.tab = t.id;
@@ -520,7 +531,8 @@ function buildForms() {
 }
 
 function showTab(id) {
-  const tab = TABS.find((t) => t.id === id) || TABS[0];
+  const tabs = TABS.filter((x) => !x.mode || x.mode === state.mode);
+  const tab = tabs.find((t) => t.id === id) || tabs[0];
   activeTab = tab.id;
   localPut("hw-tab", tab.id);
   for (const b of $("settingsTabs").children) b.classList.toggle("on", b.dataset.tab === tab.id);
@@ -1032,5 +1044,6 @@ async function downloadTextGcode(url) {
   syncForms();
   await refreshPreview();
   if (q.get("open") === "settings") openSettings(true);
-  if (q.get("open") === "params") openParams(true);
+  const pop = { params: "paramsPop", hand: "handPop", text: "textPop" }[q.get("open")];
+  if (pop) openPop(pop, true);
 })();

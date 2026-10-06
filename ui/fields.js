@@ -81,11 +81,23 @@ const QUICK = [
 
 const isOutlines = (S) => S.mode === "outlines";
 
+function fontSummary(P) {
+  const f = P?.font;
+  if (!f) return "";
+  const variants = Object.keys(f.variants || {}).length, ligs = (f.ligatures || []).length;
+  let t = `${f.name}: ${f.glyph_count} глифов`;
+  if (variants) t += `, варианты букв: ${variants}`;
+  if (ligs) t += `, лигатуры: ${ligs}`;
+  if (f.notes?.length) t += `. ${f.notes.join(" ")}`;
+  return t;
+}
+
 const HAND = [
   {
     title: "Шрифт",
     fields: [
       { type: "font", label: "Шрифт" },
+      { type: "info", label: "", text: (S, P) => fontSummary(P) },
       { type: "fontUpload", label: "Загрузить шрифт (TTF, OTF, SVG)" },
     ],
   },
@@ -119,6 +131,7 @@ const randomField = (key, label, max, step, unit) =>
 const NOTEBOOK_TABS = [
   {
     id: "sheet",
+    mode: "notebook",
     title: "Тетрадь",
     groups: [
       {
@@ -156,6 +169,7 @@ const NOTEBOOK_TABS = [
   },
   {
     id: "hand",
+    mode: "notebook",
     title: "Почерк",
     groups: [
       {
@@ -212,6 +226,7 @@ const TABS = [
       },
       {
         title: "Вид листа",
+        mode: "drawing",
         fields: [bool("drawing.show_travel", "Показывать холостые ходы", { redraw: true })],
       },
     ],
@@ -240,6 +255,7 @@ const TABS = [
       },
       {
         title: "Рамка",
+        mode: "drawing",
         fields: [
           bool("drawing.frame.enabled", "Рамка с полями"),
           num("drawing.frame.left", "Слева", { unit: "мм", step: 0.5, min: 0, show: (S) => S.drawing.frame.enabled }),
@@ -255,6 +271,7 @@ const TABS = [
       },
       {
         title: "Сдвиг чертежа",
+        mode: "drawing",
         fields: [
           num("drawing.placement.dx", "Сдвиг по X", { unit: "мм", step: 0.5 }),
           num("drawing.placement.dy", "Сдвиг по Y", { unit: "мм", step: 0.5 }),
@@ -263,6 +280,7 @@ const TABS = [
       },
       {
         title: "Толщина линий",
+        mode: "drawing",
         fields: [
           bool("drawing.weights.enabled", "Толстые линии несколькими проходами"),
           num("drawing.weights.threshold", "Толстая, если толще", { unit: "мм", step: 0.05, min: 0, show: (S) => S.drawing.weights.enabled }),
@@ -272,6 +290,7 @@ const TABS = [
       },
       {
         title: "Проходы",
+        mode: "drawing",
         fields: [
           sel("drawing.split.areas", "Рабочих областей", [[0, "авто (сколько нужно)"], [1, "1"], [2, "2 (лист 0° и 180°)"], [3, "3"], [4, "4 (все углы в упоры)"]], { int: true }),
           num("drawing.split.overlap", "Нахлёст у шва", { unit: "мм", step: 0.1, min: 0 }),
@@ -318,6 +337,7 @@ const TABS = [
   ...NOTEBOOK_TABS,
   {
     id: "extra",
+    mode: "drawing",
     title: "Дополнительные",
     groups: [
       {
@@ -388,7 +408,11 @@ function buildForm(container, groups, hooks) {
       const row = document.createElement("label");
       row.className = f.type === "bool" || f.type === "travel" ? "frow check" : "frow";
       let input;
-      if (f.type === "seed" || f.type === "fontUpload" || f.type === "testFile") {
+      if (f.type === "info") {
+        row.className = "frow info";
+        input = document.createElement("span");
+        row.appendChild(input);
+      } else if (f.type === "seed" || f.type === "fontUpload" || f.type === "testFile") {
         row.className = "frow action";
         input = document.createElement("button");
         input.type = "button";
@@ -438,7 +462,8 @@ function buildForm(container, groups, hooks) {
       const item = { f, row, input, group: box, g };
       items.push(item);
       const commit = () => hooks.change(item);
-      if (input.tagName === "BUTTON") {
+      if (f.type === "info") {
+      } else if (input.tagName === "BUTTON") {
         input.addEventListener("click", commit);
       } else if (f.type === "num") {
         let t = 0;

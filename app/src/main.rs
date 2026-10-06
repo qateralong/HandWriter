@@ -158,6 +158,7 @@ fn fatal(text: &str) -> i32 {
 }
 
 fn main() {
+    handwriter_core::i18n::add_table("en", include_str!("../../ui/en.json"));
     let args = match parse_args() {
         Ok(a) => a,
         Err(msg) => {

@@ -1,4 +1,4 @@
-use std::sync::{LazyLock, RwLock};
+use std::sync::{LazyLock, OnceLock, RwLock};
 
 use serde_json::Value;
 
@@ -29,14 +29,26 @@ struct Entry {
     cyr_end: bool,
 }
 
-static EN_TABLE: LazyLock<Vec<Entry>> = LazyLock::new(|| table(EN));
+static EXTRA_EN: OnceLock<&'static str> = OnceLock::new();
+
+static EN_TABLE: LazyLock<Vec<Entry>> = LazyLock::new(|| table(&[Some(EN), EXTRA_EN.get().copied()]));
+
+pub fn add_table(code: &str, json: &'static str) {
+    if code == "en" {
+        let _ = EXTRA_EN.set(json);
+    }
+}
 
 fn is_cyr(c: char) -> bool {
     ('\u{400}'..='\u{4ff}').contains(&c)
 }
 
-fn table(src: &str) -> Vec<Entry> {
-    let words: serde_json::Map<String, Value> = serde_json::from_str(src).expect("locale json");
+fn table(sources: &[Option<&str>]) -> Vec<Entry> {
+    let mut words: serde_json::Map<String, Value> = serde_json::Map::new();
+    for src in sources.iter().flatten() {
+        let m: serde_json::Map<String, Value> = serde_json::from_str(src).expect("locale json");
+        words.extend(m);
+    }
     let mut out: Vec<Entry> = words
         .into_iter()
         .filter_map(|(k, v)| {

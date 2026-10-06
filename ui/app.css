@@ -208,3 +208,4 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .missing-box .ch { font-size: 18px; min-width: 24px; text-align: center; font-weight: 600; }
 .missing-box .m-row.ok { opacity: .7; }
 .missing-box input[type="text"] { width: 90px; }
+.frow.info { color: var(--muted); font-size: 12.5px; min-height: 0; }
